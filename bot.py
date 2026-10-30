@@ -31,66 +31,101 @@ CHANNEL_URL = "https://t.me/saleh_down_bot"
 MAX_FILE_SIZE = 49 * 1024 * 1024
 # ============================================================
 
+# خادم ويب مصغر لإبقاء خدمة Render نشطة (Live) باستمرار
 class SimpleHealthServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot Active 24/7!")
+        self.wfile.write(b"Bot Active on Render 24/7!")
 
 def start_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), SimpleHealthServer)
     server.serve_forever()
 
-def extract_tiktok_url_from_text(text: str) -> str:
-    """استخراج رابط التيك توك حتى لو كانت الرسالة تحتوي على نصوص إضافية"""
+def extract_tiktok_url(text: str) -> str:
     pattern = r'(https?://(?:vt\.tiktok\.com|vm\.tiktok\.com|www\.tiktok\.com|tiktok\.com)/[^\s]+)'
     match = re.search(pattern, text)
     if match:
         return match.group(0).split('?')[0]
     return ""
 
-def get_tiktok_direct_data(raw_url: str):
-    """
-    استخراج رابط الفيديو المباشر من تيك توك بدون تحميل محلي
-    مماثل تماماً لأقوى بوتات تيليجرام
-    """
+def download_tiktok(url: str, output_path: str):
+    """محرك تنزيل تيك توك بدون علامة مائية بالواجهات الفعالة"""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
-    # 1. المصدر الأول: واجهة TikWM المباشرة
+    # المحاولة 1: TikWM
     try:
-        api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(raw_url)}"
-        r = requests.get(api_url, headers=headers, timeout=8).json()
-        if r.get("code") == 0 and "data" in r:
-            video_url = r["data"].get("play") or r["data"].get("wmplay")
-            title = r["data"].get("title", "فيديو تيك توك")
-            if video_url:
-                # إذا كان الرابط يبدأ بـ / يكون نسبي
-                if video_url.startswith("/"):
-                    video_url = "https://www.tikwm.com" + video_url
-                return {"url": video_url, "title": title}
+        api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}"
+        res = requests.get(api_url, headers=headers, timeout=10).json()
+        if res.get("code") == 0 and "data" in res:
+            dl_url = res["data"].get("play") or res["data"].get("wmplay")
+            title = res["data"].get("title", "فيديو تيك توك")
+            if dl_url.startswith("/"):
+                dl_url = "https://www.tikwm.com" + dl_url
+            v_data = requests.get(dl_url, headers=headers, timeout=30).content
+            with open(output_path, "wb") as f:
+                f.write(v_data)
+            return {"title": title, "path": output_path}
     except Exception as e:
-        logging.warning(f"TikWM direct error: {e}")
+        logging.warning(f"TikWM error: {e}")
 
-    # 2. المصدر الثاني: واجهة Tiklydown السريعة
+    # المحاولة 2: Loover Tiklydown
     try:
-        api_url2 = f"https://api.tiklydown.eu.org/api/download?url={urllib.parse.quote(raw_url)}"
-        r2 = requests.get(api_url2, headers=headers, timeout=8).json()
-        if "video" in r2:
-            v_url = r2["video"].get("noWatermark") or r2["video"].get("watermark")
-            if v_url:
-                return {"url": v_url, "title": r2.get("title", "فيديو تيك توك")}
+        api_url2 = f"https://api.tiklydown.eu.org/api/download?url={urllib.parse.quote(url)}"
+        res2 = requests.get(api_url2, headers=headers, timeout=10).json()
+        if "video" in res2:
+            dl_url = res2["video"].get("noWatermark") or res2["video"].get("watermark")
+            title = res2.get("title", "فيديو تيك توك")
+            v_data = requests.get(dl_url, headers=headers, timeout=30).content
+            with open(output_path, "wb") as f:
+                f.write(v_data)
+            return {"title": title, "path": output_path}
     except Exception as e:
-        logging.warning(f"Tiklydown direct error: {e}")
+        logging.warning(f"Tiklydown error: {e}")
+
+    # المحاولة 3: yt-dlp كحل احتياطي
+    try:
+        ydl_opts = {
+            "format": "best[ext=mp4]/best",
+            "outtmpl": output_path,
+            "quiet": True,
+            "no_warnings": True,
+            "nocheckcertificate": True,
+            "max_filesize": MAX_FILE_SIZE,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            return {"title": info.get("title", "فيديو تيك توك"), "path": output_path}
+    except Exception as e:
+        logging.error(f"yt-dlp error: {e}")
 
     return None
 
+def download_general_media(target: str, output_path: str, is_search=False):
+    """تنزيل من باقي المواقع أو البحث في يوتيوب"""
+    query = f"ytsearch1:{target}" if is_search else target
+    ydl_opts = {
+        "format": "best[ext=mp4][filesize<45M]/best[filesize<45M]/worst[ext=mp4]/worst",
+        "outtmpl": output_path,
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "max_filesize": MAX_FILE_SIZE,
+        "extractor_args": {"youtube": {"player_client": ["android", "ios"]}},
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36",
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(query, download=True)
+        if "entries" in info and len(info["entries"]) > 0:
+            return info["entries"][0]
+        return info
+
 def ask_instant_ai(prompt: str) -> str:
-    """محرك ردود سريع ومرح"""
+    """ردود ذكية وتفاعلية وسريعة"""
     p = prompt.lower().strip()
     if any(w in p for w in ["مرحبا", "هلا", "السلام", "أهلاً", "اهلا"]):
         return "يا هلا ومية مرحبا يا غالي نورتني! 🌹✨ أنا في خدمتك دائماً، أرسل أي رابط أو طلب وسأنفذه فوراً."
@@ -107,16 +142,16 @@ def ask_instant_ai(prompt: str) -> str:
     except Exception:
         pass
 
-    return f"طلبك بخصوص <b>{prompt}</b> في البال وجاري خدمتك دائماً بأفضل شكل 🌸✨"
+    return f"طلبك بخصوص <b>{prompt}</b> على راسي من فوق! جاري تجهيز كل ما يسعدك دائماً 🌸✨"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     msg = (
-        f"👑 <b>أهلاً وسهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
-        "⚡️ <b>أسرع بوت لتحميل مقاطع التيك توك والميديا المباشرة:</b>\n\n"
-        "• 📥 <b>تيك توك:</b> فقط أرسل رابط الفيديو (مثل <code>vt.tiktok.com</code>) وسيصلك المقطع فوراً وبدون علامة مائية كما في أكبر البوتات!\n"
+        f"👑 <b>أهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
+        "⚡️ أسرع بوت لتنزيل الوسائط مباشرة في المحادثة:\n"
+        "• 📥 <b>تيك توك:</b> أرسل رابط الفيديو وسأرسله لك فوراً بدون علامة مائية.\n"
         "• 🎵 <b>أغاني وأفلام ومباريات:</b> اكتب اسم المقطع وسأجلبه لك.\n\n"
-        "👇 <i>أرسل رابط تيك توك الآن وجربه مباشرة:</i>"
+        "👇 <i>أرسل الرابط أو طلبك وسأبدأ فوراً:</i>"
     )
     kb = [
         [InlineKeyboardButton("💬 واتساب صلوح المانعي", url=WHATSAPP_URL)],
@@ -128,147 +163,77 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     chat_id = update.effective_chat.id
     msg_id = update.message.message_id
-    output_base = f"downloads/{chat_id}_{msg_id}"
+    output_path = f"downloads/{chat_id}_{msg_id}.mp4"
     os.makedirs("downloads", exist_ok=True)
 
-    # ================= 1. فك روابط تيك توك وإرسالها فوراً =================
-    tiktok_url = extract_tiktok_url_from_text(text)
+    # 1. روابط تيك توك
+    tiktok_url = extract_tiktok_url(text)
     if tiktok_url:
         wait_msg = await update.message.reply_text(
             "⚡️ <b>جاري البحث... صلوح المانعي يجلب لك المقطع الآن مباشرة ✨</b>", 
             parse_mode="HTML"
         )
-        try:
-            # استخراج رابط البث المباشر
-            data = get_tiktok_direct_data(tiktok_url)
-            
-            if data and data.get("url"):
-                caption_text = (
-                    f"🎬 <b>تفضل الفيديو بدون علامة مائية يا غالي:</b>\n\n"
-                    f"📌 <b>{data['title'][:100]}</b>\n\n"
-                    f"✨ تم التحميل بواسطة: <b>{BOT_NAME}</b>"
-                )
-                # إرسال عبر الرابط المباشر (طريقة البوتات السريعة بدون تخزين)
-                try:
-                    await update.message.reply_video(
-                        video=data["url"],
-                        caption=caption_text,
-                        parse_mode="HTML",
-                        supports_streaming=True
-                    )
-                    await wait_msg.delete()
-                    return
-                except Exception as send_err:
-                    logging.warning(f"Telegram URL stream failed, falling back to stream download: {send_err}")
+        data = download_tiktok(tiktok_url, output_path)
+        if data and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+            caption = (
+                f"🎬 <b>تفضل الفيديو بدون علامة مائية يا غالي:</b>\n\n"
+                f"📌 <b>{data['title'][:100]}</b>\n\n"
+                f"✨ تم التحميل بواسطة: <b>{BOT_NAME}</b>"
+            )
+            with open(output_path, "rb") as vid:
+                await update.message.reply_video(video=vid, caption=caption, parse_mode="HTML", supports_streaming=True)
+            await wait_msg.delete()
+            try: os.remove(output_path)
+            except Exception: pass
+            return
+        else:
+            await wait_msg.edit_text("❌ تعذر تحميل المقطع، تأكد أن الفيديو ليس خاصاً أو محذوفاً.")
+            try: os.remove(output_path)
+            except Exception: pass
+            return
 
-                # إذا رفض تيليجرام الرابط المباشر، يتم تنزيله بحجم خفيف وتمريره
-                out_file = f"{output_base}.mp4"
-                v_res = requests.get(data["url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=25)
-                with open(out_file, "wb") as f:
-                    f.write(v_res.content)
-                
-                with open(out_file, "rb") as vid:
-                    await update.message.reply_video(
-                        video=vid,
-                        caption=caption_text,
-                        parse_mode="HTML",
-                        supports_streaming=True
-                    )
-                await wait_msg.delete()
-                try: os.remove(out_file)
-                except Exception: pass
-                return
-            else:
-                await wait_msg.edit_text("❌ تعذر العثور على الفيديو، تأكد أن الفيديو ليس خاصاً أو محذوفاً.")
-        except Exception as e:
-            logging.error(f"TikTok process error: {e}")
-            await wait_msg.edit_text("❌ حدث خطأ أثناء جلب الفيديو، يرجى إعادة المحاولة.")
-        finally:
-            for f in glob.glob(f"{output_base}*"):
-                try: os.remove(f)
-                except Exception: pass
-        return
-
-    # ================= 2. الروابط العامة (يوتيوب، فيسبوك، إنستغرام) =================
+    # 2. روابط الوسائط الأخرى
     if text.startswith("http://") or text.startswith("https://"):
         wait_msg = await update.message.reply_text(
             "⚡️ <b>جاري البحث... صلوح المانعي يجلب لك المقطع الآن مباشرة ✨</b>", 
             parse_mode="HTML"
         )
-        out_file = f"{output_base}.mp4"
         try:
-            ydl_opts = {
-                "format": "best[ext=mp4][filesize<45M]/best[filesize<45M]/worst[ext=mp4]/worst",
-                "outtmpl": out_file,
-                "quiet": True,
-                "no_warnings": True,
-                "nocheckcertificate": True,
-                "max_filesize": MAX_FILE_SIZE,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(text, download=True)
-                title = info.get("title", "فيديو مباشر")
-            
-            if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
-                with open(out_file, "rb") as vid:
-                    await update.message.reply_video(
-                        video=vid, 
-                        caption=f"🎬 <b>{title[:100]}</b>\n\n✨ بواسطة: <b>{BOT_NAME}</b>", 
-                        parse_mode="HTML"
-                    )
+            info = download_general_media(text, output_path, is_search=False)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                with open(output_path, "rb") as vid:
+                    await update.message.reply_video(video=vid, caption=f"🎬 <b>{info.get('title', 'فيديو')[:100]}</b>\n\n✨ بواسطة: <b>{BOT_NAME}</b>", parse_mode="HTML")
                 await wait_msg.delete()
             else:
-                await wait_msg.edit_text("⚠️ حجم المقطع يتجاوز 50MB (الحد المسموح به).")
+                await wait_msg.edit_text("⚠️ حجم المقطع يتجاوز 50MB.")
         except Exception:
-            await wait_msg.edit_text("❌ تعذر تحميل المقطع، تأكد من صلاحية الرابط.")
+            await wait_msg.edit_text("❌ تعذر تحميل الرابط.")
         finally:
-            for f in glob.glob(f"{output_base}*"):
-                try: os.remove(f)
-                except Exception: pass
+            try: os.remove(output_path)
+            except Exception: pass
         return
 
-    # ================= 3. الكلمات المفتاحية والبحث السريع =================
+    # 3. طلبات الميديا والبحث
     media_words = ["اغنيه", "أغنية", "اغنية", "فيلم", "فلم", "افلام", "أفلام", "مسلسل", "اهداف", "أهداف", "مباراة", "مباراه", "ملخص"]
     if any(w in text.lower() for w in media_words):
         wait_msg = await update.message.reply_text(
             "⚡️ <b>جاري البحث... صلوح المانعي يبحث لك الآن عن أفضل محتوى ✨</b>", 
             parse_mode="HTML"
         )
-        out_file = f"{output_base}.mp4"
         try:
             clean_q = text.replace("قم بتنزيل", "").replace("تنزيل", "").replace("اريد", "").strip()
-            ydl_opts = {
-                "format": "best[ext=mp4][filesize<45M]/best[filesize<45M]/worst[ext=mp4]/worst",
-                "outtmpl": out_file,
-                "quiet": True,
-                "no_warnings": True,
-                "nocheckcertificate": True,
-                "max_filesize": MAX_FILE_SIZE,
-                "extractor_args": {"youtube": {"player_client": ["android", "ios"]}},
-                "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36",
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch1:{clean_q}", download=True)
-                if "entries" in info and len(info["entries"]) > 0:
-                    info = info["entries"][0]
-                title = info.get("title", clean_q)
-
-            if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
-                with open(out_file, "rb") as vid:
-                    await update.message.reply_video(
-                        video=vid,
-                        caption=f"🎬 <b>{title[:120]}</b>\n\n🍿 تم الجلب عبر: <b>{BOT_NAME}</b>",
-                        parse_mode="HTML"
-                    )
+            info = download_general_media(clean_q, output_path, is_search=True)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                with open(output_path, "rb") as vid:
+                    await update.message.reply_video(video=vid, caption=f"🎬 <b>{info.get('title', clean_q)[:100]}</b>\n\n✨ تم الجلب عبر: <b>{BOT_NAME}</b>", parse_mode="HTML")
                 await wait_msg.delete()
-                for f in glob.glob(f"{output_base}*"):
-                    try: os.remove(f)
-                    except Exception: pass
+                try: os.remove(output_path)
+                except Exception: pass
                 return
         except Exception:
             pass
 
-    # ================= 4. الردود والدردشة الذكية =================
+    # 4. الذكاء الاصطناعي والمحادثة
     wait_msg = await update.message.reply_text(
         "⚡️ <b>جاري البحث... صلوح المانعي يبحث لك الآن عن أفضل محتوى ✨</b>", 
         parse_mode="HTML"
@@ -280,12 +245,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await wait_msg.edit_text(reply)
 
 def main():
+    # تشغيل خادم الويب في خلفية السيرفر
     threading.Thread(target=start_server, daemon=True).start()
+    
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print(f"✅ {BOT_NAME} يعمل الآن بنفس محرك تيك توك السريع والمباشر...")
+    print(f"✅ {BOT_NAME} يعمل الآن على السيرفر السحابي 24/7...")
     app.run_polling()
 
 if __name__ == "__main__":
