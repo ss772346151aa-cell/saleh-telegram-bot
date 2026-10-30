@@ -23,310 +23,218 @@ logging.basicConfig(
 
 # ==================== الإعدادات الأساسية ====================
 BOT_TOKEN = "9157081412:AAF-LegdEK1zKi_ZUCPOarhFXwphmPpqFUE"
-BOT_NAME = "بوت صلوح المانعي الذكي ⚡️"
+BOT_NAME = "بوت صلوح المانعي التفاعلي ⚡️"
 BOT_USERNAME = "saleh_down_bot"
 CHANNEL_URL = "https://t.me/saleh_down_bot"
 WHATSAPP_NUMBER = "967782953692"
 WHATSAPP_URL = f"https://wa.me/{WHATSAPP_NUMBER}"
-MAX_FILE_SIZE = 50 * 1024 * 1024
+MAX_FILE_SIZE = 49 * 1024 * 1024  # حد تيليجرام المجاني (أقل من 50MB)
 # ============================================================
 
-# خادم وهمي لمنصة Render لضمان بقائه Live على مدار الساعة
 class SimpleHealthServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Saleh AI Bot is active 24/7!")
+        self.wfile.write(b"Bot is active 24/7!")
 
 def start_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), SimpleHealthServer)
-    logging.info(f"Health server running on port {port}")
     server.serve_forever()
 
 def ask_fast_ai(prompt: str) -> str:
-    """محرك ذكاء اصطناعي فائق السرعة يعتمد على DDG GPT-4o mini API"""
+    """محرك الذكاء الاصطناعي السريع والمرح"""
     system_prompt = (
         "أنت المساعد الذكي الخارق لبوت صلوح المانعي على تيليجرام. "
-        "شخصيتك: ودود جداً، ذكي، مرح، ولبق في الكلام بأسلوب شيق وجذاب يرحب بالمستخدم كأخ وعزيز. "
-        "عند طلب أفلام أو مسلسلات (مثل تركي، أجنبي، أنمي كـ سولو ليفلينج): اذكر الاسم، القصة باختصار مشوق، التقييم العالمي، ورابط للبحث والمشاهدة. "
-        "عند السؤال عن كرة القدم والرياضة (مثل برشلونة والدوريات): قدم تحليلاً حماسياً ومعلومات دقيقة عن المباريات والمواعيد. "
-        "عند السؤال عن ألعاب أو تطبيقات: اقترح أفضل الخيارات فوراً وروابط البحث عنها. "
-        "نسق الإجابة بنقاط ورموز تعبيرية جميلة وممتعة."
+        "تحدث بأسلوب لبق، مرح، ومتحمس باللغة العربية. "
+        "عند الحديث عن الأفلام أو المسلسلات أو المباريات، اذكر القصة، سنة الإنتاج، التقييم، وتفاصيل النجوم باختصار شيق. "
+        "نسق النص دائماً بنقاط ورموز تعبيرية راقية."
     )
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/event-stream",
-        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-        "Referer": "https://duckduckgo.com/",
-        "x-vqd-accept": "1"
-    }
-
+    url = f"https://text.pollinations.ai/{requests.utils.quote(system_prompt + ' | طلب المستخدم: ' + prompt)}?model=openai"
     try:
-        # جلب التوكن الأولي السريع
-        status_resp = requests.get("https://duckduckgo.com/duckchat/v1/status", headers=headers, timeout=4)
-        vqd = status_resp.headers.get("x-vqd-4")
-
-        if vqd:
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "user", "content": f"{system_prompt}\n\nطلب المستخدم: {prompt}"}
-                ]
-            }
-            chat_headers = {
-                **headers,
-                "Content-Type": "application/json",
-                "x-vqd-4": vqd
-            }
-            resp = requests.post("https://duckduckgo.com/duckchat/v1/chat", headers=chat_headers, json=payload, timeout=6)
-            full_text = ""
-            for line in resp.iter_lines(decode_unicode=True):
-                if line and line.startswith("data: "):
-                    content = line[6:].strip()
-                    if content == "[DONE]":
-                        break
-                    import json
-                    try:
-                        data = json.loads(content)
-                        if "message" in data:
-                            full_text += data["message"]
-                    except Exception:
-                        pass
-            if full_text.strip():
-                return full_text.strip()
-    except Exception as e:
-        logging.error(f"DDG AI error: {e}")
-
-    # محرك احتياطي سريع جداً في حال تعذر المحرك الأول
-    try:
-        sys_encoded = requests.utils.quote(f"{system_prompt} | المستخدم: {prompt}")
-        url = f"https://text.pollinations.ai/{sys_encoded}?model=openai"
-        r = requests.get(url, timeout=5)
+        r = requests.get(url, timeout=10)
         if r.status_code == 200 and r.text.strip():
             return r.text.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"AI Error: {e}")
 
-    return (
-        f"يا هلا وغلا يا عزيزي نورتني! 🌟\n\n"
-        f"طلبك بخصوص: <b>{prompt}</b> في بالي دائماً!\n"
-        f"🎬 إذا تبحث عن مشاهدة الفيلم أو الحلقة بجودة عالية، تفضل الرابط المباشر للبحث:\n"
-        f"👉 https://www.google.com/search?q={requests.utils.quote(prompt + ' مشاهدة وتحميل بجودة عالية')}\n\n"
-        f"أنا رهن إشارتك في أي وقت، تبي فيلم، مباراة، أو تنزيل فيديو؟ أرسل وبشر بالسعد! ✨"
-    )
+    return f"يا هلا وغلا يا غالي! 🌹 طلبك بخصوص: <b>{prompt}</b> في بالي وجاري خدمتك دائماً بأجمل محتوى حي!"
 
-def resolve_redirect(url: str) -> str:
-    try:
-        session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0"})
-        return session.get(url, allow_redirects=True, timeout=8).url
-    except Exception:
-        return url
-
-def download_tiktok_direct(url: str, output_path: str):
-    full_url = resolve_redirect(url)
-    api_url = f"https://www.tikwm.com/api/?url={full_url}"
-    resp = requests.get(api_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-    data = resp.json()
-    if data.get("code") == 0 and "data" in data:
-        dl_url = data["data"].get("play") or data["data"].get("wmplay")
-        title = data["data"].get("title", "فيديو تيك توك")
-        video_bytes = requests.get(dl_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30).content
-        with open(output_path, "wb") as f:
-            f.write(video_bytes)
-        return {"title": title, "path": output_path, "platform": "تيك توك بدون علامة مائية"}
-    raise Exception("Tiktok download error")
-
-def download_general(url: str, output_template: str):
+def search_and_download(query: str, output_base: str, max_size_limit=True):
+    """البحث في يوتيوب وتحميل الفيديو مع مراعاة الحجم"""
+    fmt = "best[ext=mp4][filesize<48M]/best[filesize<48M]/best" if max_size_limit else "best[ext=mp4]/best"
     ydl_opts = {
-        "outtmpl": output_template,
-        "format": "best[ext=mp4]/best",
+        "format": fmt,
+        "outtmpl": f"{output_base}.%(ext)s",
+        "default_search": "ytsearch1:",
+        "quiet": True,
+        "no_warnings": True,
+        "writethumbnail": True,
+        "nocheckcertificate": True,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(query, download=True)
+        if "entries" in info and len(info["entries"]) > 0:
+            return info["entries"][0]
+        return info
+
+def download_by_url(url: str, output_base: str):
+    ydl_opts = {
+        "format": "best[ext=mp4][filesize<48M]/best[filesize<48M]/best",
+        "outtmpl": f"{output_base}.%(ext)s",
         "quiet": True,
         "no_warnings": True,
         "max_filesize": MAX_FILE_SIZE,
         "nocheckcertificate": True,
-        "user_agent": "Mozilla/5.0",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=True)
 
-def get_main_keyboard():
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 سينما وأفلام", callback_data="movies_hint"),
-            InlineKeyboardButton("⚽ كرة القدم والمباريات", callback_data="sports_hint"),
-        ],
-        [
-            InlineKeyboardButton("🎮 ألعاب وتطبيقات", callback_data="games_hint"),
-            InlineKeyboardButton("📿 ذكر اليوم", callback_data="daily_zekr"),
-        ],
-        [
-            InlineKeyboardButton("💬 واتساب صلوح المانعي", url=WHATSAPP_URL),
-            InlineKeyboardButton("📢 قناة التحديثات", url=CHANNEL_URL),
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_name = update.effective_user.first_name
-    welcome_text = (
-        f"👑 <b>أهلاً وسهلاً بك يا أغلى الناس {user_name}!</b> نورت {BOT_NAME} 🌹\n\n"
-        "أنا مساعدك ورفيقك الشخصي المزود بأحدث وأسرع ذكاء اصطناعي ⚡️\n\n"
-        "✨ <b>كيف أقدر أسعدك اليوم؟</b>\n"
-        "• 🎬 <b>الأفلام والمسلسلات:</b> اطلب أي فيلم، حلقة مسلسل تركي، أو أنمي وسأعطيك قصته وتقييمه وروابطه فوراً.\n"
-        "• ⚽ <b>عالم الرياضة:</b> اسألني عن المباريات، نادي برشلونة، الدوريات الأوروبية والتحليلات الرياضية.\n"
-        "• 🎮 <b>الألعاب والبرامج:</b> اقترح لك أفضل الألعاب والتطبيقات للهاتف والكمبيوتر.\n"
-        "• 📥 <b>التحميل الخارق:</b> أرسل رابط أي مقطع من (تيك توك، يوتيوب، إنستغرام، فيسبوك) وسأحمله لك في ثوانٍ بدون علامة مائية!\n\n"
-        "👇 <i>تفضل بسؤالي مباشرة في الشات أو اختر من القائمة:</i>"
+    name = update.effective_user.first_name
+    msg = (
+        f"👑 <b>أهلاً وسهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
+        "🎬 <b>أنا لا أرسل لك مجرد روابط.. بل أرسل لك المحتوى حياً ومباشراً:</b>\n\n"
+        "• <b>الأفلام والمسلسلات:</b> اكتب اسم أي عمل، وسأرسل لك مقطعه الترويجي أو ملخصه كفيديو كامل داخل المحادثة.\n"
+        "• <b>المباريات:</b> اطلب أي مباراة أو ملخص وستصلك الأهداف كفيديو مباشر.\n"
+        "• <b>تنزيل الوسائط:</b> أرسل رابط أي فيديو من تيك توك، يوتيوب، أو إنستغرام ليتم تحميله فوراً.\n"
+        "• <b>ذكاء اصطناعي تفاعلي:</b> اسألني عن أي موضوع وسأجيبك بسرعة فائقة!\n"
     )
-    await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard(), parse_mode="HTML")
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "movies_hint":
-        text = (
-            "🎬 <b>عالم السينما والمسلسلات في خدمتك:</b>\n\n"
-            "اكتب لي مباشرة في الشات أي طلب مثل:\n"
-            "• <i>أريد أفضل فيلم أكشن لعام 2024</i>\n"
-            "• <i>أعطني ملخص مسلسل قيامة عثمان</i>\n"
-            "• <i>حلقات أنمي سولو ليفلينج</i>\n\n"
-            "وسأجلب لك القصة، التقييم، وأفضل روابط المشاهدة في لحظات! 🍿"
-        )
-        await query.message.reply_text(text, parse_mode="HTML")
-
-    elif query.data == "sports_hint":
-        text = (
-            "⚽ <b>ركن الرياضة وعشاق الساحرة المستديرة:</b>\n\n"
-            "اسألني عن:\n"
-            "• <i>مباريات اليوم في دوري الأبطال</i>\n"
-            "• <i>أخبار نادي برشلونة وتشكيلته</i>\n"
-            "• <i>ترتيب الدوري الإسباني أو الإنجليزي</i>\n\n"
-            "وسأعطيك التحليل والمعلومات الكروية فوراً! 🏆"
-        )
-        await query.message.reply_text(text, parse_mode="HTML")
-
-    elif query.data == "games_hint":
-        text = (
-            "🎮 <b>أفضل الألعاب والبرامج المختارة لك:</b>\n\n"
-            "اسألني عن أي مجال:\n"
-            "• <i>أفضل لعبة قتال للأندرويد بدون إنترنت</i>\n"
-            "• <i>برامج لتعديل الفيديو للموبايل</i>\n\n"
-            "وسأرشح لك أفضل الخيارات مع الروابط! 🕹"
-        )
-        await query.message.reply_text(text, parse_mode="HTML")
-
-    elif query.data == "daily_zekr":
-        athkar = [
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ، سُبْحَانَ اللَّهِ الْعَظِيمِ 🌸",
-            "لا حَوْلَ وَلا قُوَّةَ إِلا بِاللَّهِ الْعَلِيِّ الْعَظِيمِ ✨",
-            "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ وَعَلَى آلِهِ وَصَحْبِهِ أَجْمَعِينَ 🌿",
-            "أَسْتَغْفِرُ اللَّهَ الْعَظِيمَ الَّذِي لا إِلَهَ إِلا هُوَ الْحَيُّ الْقَيُّومُ وَأَتُوبُ إِلَيْهِ 💫",
-            "لا إِلَهَ إِلا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ 🤲"
-        ]
-        text = f"✨ <b>ذكر اليوم لراحة بالك:</b>\n\n<blockquote>{random.choice(athkar)}</blockquote>"
-        await query.message.reply_text(text, parse_mode="HTML")
+    keyboard = [
+        [InlineKeyboardButton("💬 واتساب صلوح المانعي", url=WHATSAPP_URL)],
+        [InlineKeyboardButton("📢 قناة التحديثات", url=CHANNEL_URL)]
+    ]
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    chat_id = update.effective_chat.id
+    msg_id = update.message.message_id
+    output_base = f"downloads/{chat_id}_{msg_id}"
+    os.makedirs("downloads", exist_ok=True)
 
-    # التحقق إن كانت الرسالة رابط فيديو للتحميل
-    video_domains = ["tiktok.com", "douyin.com", "youtube.com", "youtu.be", "instagram.com", "facebook.com", "fb.watch", "twitter.com", "x.com"]
-    is_video_link = (text.startswith("http://") or text.startswith("https://")) and any(d in text.lower() for d in video_domains)
-
-    if is_video_link:
-        status_msg = await update.message.reply_text("⚡️ <b>جاري سحب الفيديو وتجهيزه بأعلى جودة...</b>", parse_mode="HTML")
-        chat_id = update.effective_chat.id
-        output_base = f"downloads/{chat_id}_{update.message.message_id}"
-        os.makedirs("downloads", exist_ok=True)
-        file_path = None
-        title = "فيديو"
-        platform_name = "مواقع التواصل"
-
+    # 1. إذا كان المدخل رابطاً مباشراً
+    if text.startswith("http://") or text.startswith("https://"):
+        wait_msg = await update.message.reply_text("⚡️ <b>جاري سحب الفيديو وإرساله لك مباشرة...</b>", parse_mode="HTML")
         try:
-            if "tiktok.com" in text or "douyin.com" in text:
-                output_file = f"{output_base}.mp4"
-                info = download_tiktok_direct(text, output_file)
-                file_path = info["path"]
-                title = info["title"]
-                platform_name = info["platform"]
+            info = download_by_url(text, output_base)
+            files = [f for f in glob.glob(f"{output_base}.*") if not f.endswith(('.webp', '.jpg', '.png'))]
+            if files and os.path.getsize(files[0]) <= MAX_FILE_SIZE:
+                title = info.get("title", "فيديو مباشر")
+                with open(files[0], "rb") as vid:
+                    await update.message.reply_video(video=vid, caption=f"🎬 <b>{title[:100]}</b>\n\n⚡️ بواسطة {BOT_NAME}", parse_mode="HTML")
+                await wait_msg.delete()
             else:
-                output_template = f"{output_base}.%(ext)s"
-                info = download_general(text, output_template)
-                files = glob.glob(f"{output_base}.*")
-                if files:
-                    file_path = files[0]
-                    title = info.get("title", "فيديو مباشر")
-                    platform_name = "فيديو مباشر"
-
-            if not file_path or not os.path.exists(file_path):
-                await status_msg.edit_text("❌ تعذر تحميل المقطع، تأكد من أن الرابط مباشر ومتاح للعامة.")
-                return
-
-            if os.path.getsize(file_path) > MAX_FILE_SIZE:
-                await status_msg.edit_text("⚠️ حجم الفيديو يتعدى 50MB (الحد المسموح في تيليجرام).")
-                os.remove(file_path)
-                return
-
-            await status_msg.edit_text("📤 <b>جاري إرسال المقطع إليك الآن...</b>", parse_mode="HTML")
-            caption_text = (
-                f"🎬 <b>{title[:120]}</b>\n\n"
-                f"📌 المنصة: <b>{platform_name}</b>\n"
-                f"⚡️ تم التنزيل عبر: <b>{BOT_NAME}</b>\n"
-                f"💬 للتواصل: <code>+{WHATSAPP_NUMBER}</code>"
-            )
-            keyboard = [[
-                InlineKeyboardButton("💬 واتساب صلوح المانعي", url=WHATSAPP_URL),
-                InlineKeyboardButton("📢 قناة التحديثات", url=CHANNEL_URL)
-            ]]
-            with open(file_path, "rb") as video:
-                await update.message.reply_video(video=video, caption=caption_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML", supports_streaming=True)
-            await status_msg.delete()
-
+                await wait_msg.edit_text("⚠️ حجم الفيديو يتعدى 50MB (الحد الأقصى لملفات تيليجرام المباشرة).")
         except Exception:
-            await status_msg.edit_text("❌ تعذر تنزيل الفيديو، يرجى التأكد من صحة الرابط.")
+            await wait_msg.edit_text("❌ تعذر تحميل المقطع، تأكد من صحة الرابط.")
         finally:
             for f in glob.glob(f"{output_base}*"):
-                try:
-                    if os.path.exists(f):
-                        os.remove(f)
-                except Exception:
-                    pass
+                try: os.remove(f)
+                except Exception: pass
         return
 
-    # محادثة وبحث فائق السرعة بالذكاء الاصطناعي مع رسالة الانتظار المخصصة
-    search_msg = await update.message.reply_text(
+    # 2. الكلمات المفتاحية للمحتوى الحي (أفلام، مسلسلات، مباريات، أهداف، أنمي)
+    media_keywords = ["فيلم", "فلم", "مسلسل", "حلقة", "اهداف", "أهداف", "ملخص", "انمي", "مباراة", "مباراه", "هدف", "عرض", "اعلان"]
+    is_media_request = any(kw in text.lower() for kw in media_keywords)
+
+    if is_media_request:
+        wait_msg = await update.message.reply_text(
+            "⚡️ <b>جاري البحث... صلوح المانعي يجلب لك المقطع والبوستر الحي الآن مباشرة ✨</b>", 
+            parse_mode="HTML"
+        )
+        
+        info = None
+        # محاولة البحث وسحب الفيديو المناسب أولاً
+        try:
+            info = search_and_download(text, output_base, max_size_limit=True)
+        except Exception:
+            pass
+
+        video_files = [f for f in glob.glob(f"{output_base}.*") if not f.endswith(('.webp', '.jpg', '.png'))]
+        
+        # الحالة الأولى: وجدنا الفيديو وكان حجمه ضمن المسموح (أقل من 50MB) -> إرساله فوراً كفيديو
+        if video_files and os.path.exists(video_files[0]) and os.path.getsize(video_files[0]) <= MAX_FILE_SIZE:
+            title = info.get("title", text) if info else text
+            caption = (
+                f"🎬 <b>{title[:120]}</b>\n\n"
+                f"🍿 تم جلب الفيديو حياً ومباشراً بواسطة: <b>{BOT_NAME}</b>\n"
+                f"💬 للتواصل: <code>+{WHATSAPP_NUMBER}</code>"
+            )
+            watch_url = info.get("webpage_url") if info else f"https://www.google.com/search?q={requests.utils.quote(text)}"
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🎬 مشاهدة المصدر بجودة 4K", url=watch_url)]])
+            
+            with open(video_files[0], "rb") as vid:
+                await update.message.reply_video(video=vid, caption=caption, reply_markup=btn, parse_mode="HTML", supports_streaming=True)
+            await wait_msg.delete()
+
+        # الحالة الثانية: المحتوى كبير جداً (أكثر من 50MB) -> إرسال التريلر أو البوستر كفيديو/صورة حية
+        else:
+            # تنظيف المحاولة السابقة
+            for f in glob.glob(f"{output_base}*"):
+                try: os.remove(f)
+                except Exception: pass
+
+            # جلب إعلان/تريلر سريع (حجمه دائماً خفيف) أو البوستر
+            trailer_query = f"{text} trailer اعلان رسمي"
+            try:
+                trailer_info = search_and_download(trailer_query, output_base, max_size_limit=True)
+                t_files = [f for f in glob.glob(f"{output_base}.*") if not f.endswith(('.webp', '.jpg', '.png'))]
+                thumb_files = glob.glob(f"{output_base}.webp") + glob.glob(f"{output_base}.jpg") + glob.glob(f"{output_base}.png")
+                
+                ai_details = ask_fast_ai(text)
+                search_url = f"https://www.google.com/search?q={requests.utils.quote(text + ' مشاهدة وتحميل مباشر')}"
+                btn = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ بدء تشغيل العمل كاملاً", url=search_url)]])
+
+                caption_body = (
+                    f"🎬 <b>{text.upper()}</b>\n"
+                    f"⚠️ <i>العمل الكامل حجمه يتجاوز 50MB، تم جلب البوستر والعرض الحي لك:</i>\n\n"
+                    f"{ai_details}\n\n"
+                    f"⚡️ <b>{BOT_NAME}</b>"
+                )
+
+                if t_files and os.path.exists(t_files[0]) and os.path.getsize(t_files[0]) <= MAX_FILE_SIZE:
+                    with open(t_files[0], "rb") as vid:
+                        await update.message.reply_video(video=vid, caption=caption_body[:1024], reply_markup=btn, parse_mode="HTML")
+                elif thumb_files and os.path.exists(thumb_files[0]):
+                    with open(thumb_files[0], "rb") as photo:
+                        await update.message.reply_photo(photo=photo, caption=caption_body[:1024], reply_markup=btn, parse_mode="HTML")
+                else:
+                    await update.message.reply_text(caption_body, reply_markup=btn, parse_mode="HTML")
+
+                await wait_msg.delete()
+            except Exception as e:
+                logging.error(f"Trailer error: {e}")
+                ai_details = ask_fast_ai(text)
+                await wait_msg.edit_text(ai_details, parse_mode="HTML")
+
+        # تنظيف الملفات المؤقتة
+        for f in glob.glob(f"{output_base}*"):
+            try: os.remove(f)
+            except Exception: pass
+        return
+
+    # 3. للمحادثة والذكاء الاصطناعي العام
+    wait_msg = await update.message.reply_text(
         "⚡️ <b>جاري البحث... صلوح المانعي يبحث لك الآن عن أفضل محتوى ✨</b>", 
         parse_mode="HTML"
     )
-    
-    ai_reply = ask_fast_ai(text)
-    
-    # إضافة زر بحث مباشر في Google أسفل كل رد لتسهيل الوصول للمشاهدة
-    search_url = f"https://www.google.com/search?q={requests.utils.quote(text)}"
-    quick_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔍 فتح نتائج المشاهدة والتحميل", url=search_url)],
-        [InlineKeyboardButton("💬 تواصل مع صلوح المانعي", url=WHATSAPP_URL)]
-    ])
-    
+    reply = ask_fast_ai(text)
     try:
-        await search_msg.edit_text(ai_reply, reply_markup=quick_keyboard, parse_mode="HTML")
+        await wait_msg.edit_text(reply, parse_mode="HTML")
     except Exception:
-        # في حال وجود رموز تعارض مع وسم HTML
-        await search_msg.edit_text(ai_reply, reply_markup=quick_keyboard)
+        await wait_msg.edit_text(reply)
 
 def main():
     threading.Thread(target=start_server, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print(f"✅ {BOT_NAME} يعمل الآن بالذكاء الاصطناعي فائق السرعة...")
+    print(f"✅ {BOT_NAME} يعمل الآن بالمحتوى الحي والفيديوهات المباشرة...")
     app.run_polling()
 
 if __name__ == "__main__":
