@@ -43,7 +43,7 @@ def start_server():
     server.serve_forever()
 
 def ask_real_ai(prompt: str) -> str:
-    """ذكاء اصطناعي تفاعلي متنوع مع ردود مخصصة"""
+    """ذكاء اصطناعي تفاعلي وسريع دون ردود مكررة"""
     p_lower = prompt.lower().strip()
     if any(w in p_lower for w in ["مرحبا", "هلا", "السلام", "أهلاً", "اهلا"]):
         return (
@@ -66,30 +66,70 @@ def ask_real_ai(prompt: str) -> str:
 
     return f"طلبك بخصوص <b>{prompt}</b> تحت أمرك! جاري البحث في كافة المصادر المتاحة لخدمتك بأفضل شكل 🎬✨"
 
-def download_tiktok_direct(url: str, output_path: str):
-    """تنزيل تيك توك بدون علامة مائية وبدون حظر"""
-    api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}"
-    resp = requests.get(api_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).json()
-    if resp.get("code") == 0 and "data" in resp:
-        dl_url = resp["data"].get("play") or resp["data"].get("wmplay")
-        title = resp["data"].get("title", "فيديو تيك توك")
-        video_bytes = requests.get(dl_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30).content
-        with open(output_path, "wb") as f:
-            f.write(video_bytes)
-        return {"title": title, "path": output_path}
-    raise Exception("Tiktok API failed")
+def resolve_tiktok_url(short_url: str) -> str:
+    """فك الروابط المختصرة من تيك توك لتجاوز الخطأ"""
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        })
+        resp = session.get(short_url, allow_redirects=True, timeout=10)
+        return resp.url
+    except Exception:
+        return short_url
+
+def download_tiktok_smart(url: str, output_path: str):
+    """محرك تنزيل تيك توك ذكي متعدد المصادر وبدون علامة مائية"""
+    resolved_url = resolve_tiktok_url(url)
+    
+    # 1. المحاولة الأولى: TikWM API
+    try:
+        api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(resolved_url)}"
+        resp = requests.get(api_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12).json()
+        if resp.get("code") == 0 and "data" in resp:
+            dl_url = resp["data"].get("play") or resp["data"].get("wmplay")
+            title = resp["data"].get("title", "فيديو تيك توك بدون علامة مائية")
+            if dl_url:
+                v_data = requests.get(dl_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30).content
+                with open(output_path, "wb") as f:
+                    f.write(v_data)
+                return {"title": title, "path": output_path, "source": "تيك توك بدون علامة مائية"}
+    except Exception as e:
+        logging.warning(f"TikWM failed: {e}")
+
+    # 2. المحاولة الثانية: Loover TikTok API التبادلي
+    try:
+        backup_api = f"https://api.tiklydown.eu.org/api/download?url={urllib.parse.quote(resolved_url)}"
+        resp2 = requests.get(backup_api, timeout=12).json()
+        video_url = None
+        if "video" in resp2:
+            video_url = resp2["video"].get("noWatermark") or resp2["video"].get("watermark")
+        if video_url:
+            v_data = requests.get(video_url, timeout=30).content
+            with open(output_path, "wb") as f:
+                f.write(v_data)
+            return {"title": resp2.get("title", "فيديو تيك توك"), "path": output_path, "source": "تيك توك بديل"}
+    except Exception as e:
+        logging.warning(f"Tiklydown backup failed: {e}")
+
+    # 3. المحاولة الثالثة: yt-dlp بمحاكاة متصفح الموبايل
+    ydl_opts = {
+        "format": "best[ext=mp4]/best",
+        "outtmpl": output_path,
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15",
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(resolved_url, download=True)
+        return {"title": info.get("title", "فيديو تيك توك"), "path": output_path, "source": "تيك توك"}
 
 def multi_platform_download(query_or_url: str, output_base: str, is_search=False):
-    """
-    محرك بحث وتنزيل تبادلي:
-    إذا حُظر من منصة ينتقل تلقائياً للأخرى:
-    1. محاكاة أندرويد وآيفون لتخطي حظر يوتيوب
-    2. الانتقال إلى Dailymotion
-    3. استخراج البيانات المباشرة
-    """
+    """محرك تنزيل تبادلي لباقي المنصات"""
     output_file = f"{output_base}.mp4"
 
-    # المحاولة 1: يوتيوب بمحاكاة متقدمة للعملاء
+    # يوتيوب
     try:
         target = f"ytsearch1:{query_or_url}" if is_search else query_or_url
         ydl_opts = {
@@ -99,11 +139,7 @@ def multi_platform_download(query_or_url: str, output_base: str, is_search=False
             "no_warnings": True,
             "nocheckcertificate": True,
             "max_filesize": MAX_FILE_SIZE,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "ios", "mweb"]
-                }
-            },
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "mweb"]}},
             "user_agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36",
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -112,10 +148,10 @@ def multi_platform_download(query_or_url: str, output_base: str, is_search=False
                 info = info["entries"][0]
             if os.path.exists(output_file) and os.path.getsize(output_file) > 1000:
                 return {"title": info.get("title", query_or_url), "path": output_file, "source": "YouTube"}
-    except Exception as e:
-        logging.warning(f"YouTube attempt failed: {e}")
+    except Exception:
+        pass
 
-    # المحاولة 2: البحث التبادلي في Dailymotion في حال حظر يوتيوب
+    # Dailymotion في حال البحث
     if is_search:
         try:
             dm_target = f"dmsearch1:{query_or_url}"
@@ -134,13 +170,13 @@ def multi_platform_download(query_or_url: str, output_base: str, is_search=False
                     info = info["entries"][0]
                 if os.path.exists(output_file) and os.path.getsize(output_file) > 1000:
                     return {"title": info.get("title", query_or_url), "path": output_file, "source": "Dailymotion"}
-        except Exception as e:
-            logging.warning(f"Dailymotion attempt failed: {e}")
+        except Exception:
+            pass
 
     return None
 
 def fetch_media_meta(query: str):
-    """جلب بوستر وتفاصيل المقطع من محركات بديلة بدون حظر"""
+    """جلب بوستر وتفاصيل العمل من محركات بديلة بدون حظر"""
     try:
         clean_q = query.replace("فيلم", "").replace("فلم", "").replace("مسلسل", "").strip()
         url = f"https://itunes.apple.com/search?term={urllib.parse.quote(clean_q)}&media=movie&limit=1"
@@ -162,11 +198,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     msg = (
         f"👑 <b>أهلاً وسهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
-        "⚡️ <b>نظام البحث المتعدد والذكي لتلبية طلبك فوراً:</b>\n\n"
-        "• 🎵 <b>الأغاني والصوتيات:</b> اكتب (اغنية كذا) وسأبحث عنها وأرسلها لك مباشرة.\n"
-        "• 🎬 <b>الأفلام والمسلسلات:</b> اكتب اسم العمل لجلب ملخصه وفيديوهاته وبوستراته الحية.\n"
+        "⚡️ <b>نظام التحميل والبحث المباشر:</b>\n\n"
+        "• 🎵 <b>تنزيل تيك توك:</b> أرسل أي رابط تيك توك وسأحمله لك فوراً وبدون علامة مائية!\n"
+        "• 🎬 <b>الأفلام والمسلسلات:</b> اكتب اسم العمل لجلب ملخصه وفيديوهاته الحية.\n"
         "• ⚽ <b>مباريات كرة القدم:</b> اطلب أي مباراة أو أهداف وسيتم سحب المقطع فوراً.\n"
-        "• 📥 <b>تنزيل الروابط:</b> أرسل رابط تيك توك، يوتيوب، فيسبوك، أو إنستغرام وسأحمله لك دون قيود.\n"
+        "• 📥 <b>منصات الفيديو:</b> أرسل رابط يوتيوب، فيسبوك، أو إنستغرام ليتم التنزيل مباشرة.\n"
         "• 💬 <b>الدردشة الذكية:</b> تحدث معي وسأجيبك بسرعة فائقة ومرح!\n"
     )
     kb = [
@@ -189,41 +225,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     is_media = is_url or any(w in text.lower() for w in media_words)
 
-    # ================= 1. قسم الوسائط والبحث المتعدد =================
     if is_media:
         wait_msg = await update.message.reply_text(
-            "⚡️ <b>جاري البحث... صلوح المانعي يتنقل بين المنصات لجلب أفضل نتيجة لك فوراً ✨</b>", 
+            "⚡️ <b>جاري التحميل... صلوح المانعي يسحب لك الفيديو بأعلى جودة الآن ✨</b>", 
             parse_mode="HTML"
         )
 
         result = None
 
-        # أ) إذا كان الرابط من تيك توك
+        # 1. معالجة تيك توك بالمحرك الذكي متعدد الطبقات
         if "tiktok.com" in text or "douyin.com" in text:
             try:
                 out_path = f"{output_base}.mp4"
-                result = download_tiktok_direct(text, out_path)
-            except Exception:
-                pass
+                result = download_tiktok_smart(text, out_path)
+            except Exception as e:
+                logging.error(f"TikTok smart engine error: {e}")
 
-        # ب) البحث والتنزيل التبادلي لباقي الروابط أو كلمات البحث
+        # 2. تنزيل باقي الروابط والوسائط
         if not result:
             clean_search = text.replace("قم بتنزيل", "").replace("تنزيل", "").replace("فيديو", "").strip()
             result = multi_platform_download(clean_search, output_base, is_search=(not is_url))
 
-        # ج) في حال نجاح سحب الفيديو وإرساله مباشرة
+        # 3. إرسال الفيديو كملف مباشر في حال النجاح
         if result and os.path.exists(result["path"]) and os.path.getsize(result["path"]) > 1000:
-            title = result.get("title", text)
+            title = result.get("title", "فيديو مباشر")
+            source_platform = result.get("source", "مواقع التواصل")
             caption = (
                 f"🎬 <b>{title[:120]}</b>\n\n"
-                f"🍿 تم الجلب بنجاح عبر: <b>{BOT_NAME}</b>\n"
+                f"📌 المنصة: <b>{source_platform}</b>\n"
+                f"🍿 تم التحميل بواسطة: <b>{BOT_NAME}</b>\n"
                 f"💬 للتواصل: <code>+{WHATSAPP_NUMBER}</code>"
             )
             try:
                 with open(result["path"], "rb") as vid:
                     await update.message.reply_video(video=vid, caption=caption, parse_mode="HTML", supports_streaming=True)
                 await wait_msg.delete()
-                # تنظيف الملفات
                 for f in glob.glob(f"{output_base}*"):
                     try: os.remove(f)
                     except Exception: pass
@@ -231,7 +267,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logging.error(f"Send Video Error: {e}")
 
-        # د) خط الدفاع التبادلي في حال تعذر التنزيل أو الحجم أكبر من 50MB: إرسال البوستر ومعلومات العمل
+        # 4. في حال تعذر التنزيل أو كان الحجم أكثر من 50MB
         meta = fetch_media_meta(text)
         ai_info = ask_real_ai(text)
         search_target = urllib.parse.quote(text + " مشاهدة وتحميل بجودة عالية")
@@ -260,7 +296,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
         return
 
-    # ================= 2. قسم المحادثة والذكاء الاصطناعي =================
+    # المحادثة والذكاء الاصطناعي
     wait_msg = await update.message.reply_text("⚡️ <b>جاري الرد... صلوح المانعي معك الآن ✨</b>", parse_mode="HTML")
     reply = ask_real_ai(text)
     try:
@@ -274,7 +310,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print(f"✅ {BOT_NAME} يعمل الآن بالبحث التبادلي الشامل في جميع المنصات...")
+    print(f"✅ {BOT_NAME} يعمل الآن بمحرك تيك توك المحسن وتجاوز الحظر...")
     app.run_polling()
 
 if __name__ == "__main__":
