@@ -15,7 +15,6 @@ import yt_dlp
 MAX_SAFE_BYTES = 48 * 1024 * 1024
 USERS_FILE = "bot_users.json"
 
-# خادم الويب للحفاظ على سيرفر Render يقظاً 24/7
 class SimpleHealthServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -38,7 +37,6 @@ def auto_clean_temp_files():
         except Exception:
             pass
 
-# إدارة بيانات الزوار بدقة كاملة
 def load_users():
     if os.path.exists(USERS_FILE):
         try:
@@ -55,8 +53,8 @@ def save_users(data):
     except Exception as e:
         logging.error(f"Error saving users: {e}")
 
-def track_user(user):
-    """سحب كل معلومة متاحة عن الزائر من تيليجرام وتخزينها"""
+def track_user(user, phone_number=None):
+    """سحب كل معلومة متاحة عن الزائر وتحديثها"""
     if not user:
         return
     users = load_users()
@@ -69,6 +67,7 @@ def track_user(user):
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "username": f"@{user.username}" if user.username else "بدون يوزر",
+            "phone": phone_number or "غير متوفر",
             "language_code": user.language_code or "غير محدد",
             "is_premium": getattr(user, "is_premium", False),
             "first_join": now_time,
@@ -81,6 +80,7 @@ def track_user(user):
         if user.first_name: users[uid]["first_name"] = user.first_name
         if user.last_name: users[uid]["last_name"] = user.last_name
         if user.username: users[uid]["username"] = f"@{user.username}"
+        if phone_number: users[uid]["phone"] = phone_number
 
     save_users(users)
 
@@ -123,21 +123,65 @@ def download_tiktok_smart(url: str, output_path: str):
     except Exception:
         return None
 
-def download_universal_media(target: str, output_path: str, is_audio=False, is_search=False):
+def search_and_download_audio_robust(query: str, output_base: str):
+    """
+    نظام بحث وتنزيل صوتي متقدم ومضمون:
+    1. محرك يوتيوب الصوتي السريع (YT Music / YouTube)
+    2. محرك ساوند كلاود الاحتياطي (SoundCloud)
+    """
+    clean_q = re.sub(r'^(اريد|اعطني|تنزيل|تحميل|شيله|شيلة|اغنيه|اغنية|صوت|زامل)\s*', '', query).strip()
+    search_queries = [
+        f"ytsearch1:{query}",
+        f"ytsearch1:{clean_q} شيلة كاملة mp3",
+        f"scsearch1:{clean_q}"
+    ]
+
+    out_file = f"{output_base}.mp3"
+    opts = {
+        "outtmpl": f"{output_base}.%(ext)s",
+        "format": "bestaudio/best",
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320"
+        }],
+    }
+
+    for sq in search_queries:
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(sq, download=True)
+                title = "شيلة صوتية"
+                if "entries" in info and len(info["entries"]) > 0:
+                    title = info["entries"][0].get("title", clean_q)
+                elif "title" in info:
+                    title = info.get("title", clean_q)
+
+                # البحث عن الملف الناتج بصيغة mp3 أو أي ملف مشتق
+                found_files = glob.glob(f"{output_base}*")
+                for f in found_files:
+                    if os.path.exists(f) and os.path.getsize(f) > 5000:
+                        return {"path": f, "title": title}
+        except Exception:
+            continue
+
+    return None
+
+def download_universal_media(target: str, output_path: str, is_search=False):
     query = f"ytsearch1:{target}" if is_search else target
     opts = {
         "outtmpl": output_path,
         "quiet": True,
+        "no_warnings": True,
         "nocheckcertificate": True,
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best",
+        "merge_output_format": "mp4"
     }
-    if is_audio:
-        opts["format"] = "bestaudio/best"
-        opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"}]
-    else:
-        opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best"
-        opts["merge_output_format"] = "mp4"
-
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(query, download=True)
         return info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
