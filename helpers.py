@@ -15,12 +15,13 @@ import yt_dlp
 MAX_SAFE_BYTES = 48 * 1024 * 1024
 USERS_FILE = "bot_users.json"
 
+# خادم الويب لإبقاء السيرفر نشطاً 24/7
 class SimpleHealthServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot is online 24/7!")
+        self.wfile.write(b"Saleh Imperial Bot Engine is fully secure and online 24/7!")
 
 def start_server():
     port = int(os.environ.get("PORT", 10000))
@@ -28,6 +29,7 @@ def start_server():
     server.serve_forever()
 
 def auto_clean_temp_files():
+    """تنظيف تلقائي دوري للذاكرة المؤقتة كل 10 دقائق"""
     while True:
         time.sleep(600)
         try:
@@ -51,10 +53,9 @@ def save_users(data):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logging.error(f"Error saving users: {e}")
+        logging.error(f"Error saving users data: {e}")
 
 def track_user(user, phone_number=None):
-    """سحب كل معلومة متاحة عن الزائر وتحديثها"""
     if not user:
         return
     users = load_users()
@@ -88,11 +89,23 @@ def extract_url(text: str) -> str:
     match = re.search(r'(https?://[^\s]+)', text)
     return match.group(0).split('?')[0] if match else ""
 
+def is_content_safe(text: str) -> bool:
+    """فلترة أمنية لمنع سحب أو تمرير أي محتوى إباحي أو احتيالي خبيث"""
+    forbidden = [
+        "porn", "xxx", "sex", "nude", "adult", "18+", "pantera", "kazpantera",
+        "اباحي", "جنس", "سكس", "تعري", "مؤخرة", "شذوذ", "فضيحة"
+    ]
+    txt_low = text.lower()
+    return not any(w in txt_low for w in forbidden)
+
 def trim_video_to_size(input_path: str, output_path: str, target_size=MAX_SAFE_BYTES) -> bool:
     try:
         if os.path.getsize(input_path) <= target_size:
             return False
-        cmd_dur = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        cmd_dur = [
+            "ffprobe", "-v", "error", "-show_entries",
+            "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path
+        ]
         res = subprocess.run(cmd_dur, stdout=subprocess.PIPE, text=True)
         dur = float(res.stdout.strip()) if res.stdout.strip() else 240.0
         trim_sec = max(10, math.floor(dur * ((target_size * 0.92) / os.path.getsize(input_path))))
@@ -104,7 +117,9 @@ def trim_video_to_size(input_path: str, output_path: str, target_size=MAX_SAFE_B
         return False
 
 def download_tiktok_smart(url: str, output_path: str):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
     try:
         api = f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}"
         res = requests.get(api, headers=headers, timeout=10).json()
@@ -113,37 +128,40 @@ def download_tiktok_smart(url: str, output_path: str):
             if dl_url.startswith("/"): dl_url = "https://www.tikwm.com" + dl_url
             with open(output_path, "wb") as f:
                 f.write(requests.get(dl_url, headers=headers, timeout=40).content)
-            return {"title": res["data"].get("title", "تيك توك"), "path": output_path}
+            return {"title": res["data"].get("title", "تيك توك بدون علامة مائية"), "path": output_path}
     except Exception:
         pass
+
     try:
-        with yt_dlp.YoutubeDL({"format": "bestvideo+bestaudio/best", "outtmpl": output_path, "quiet": True}) as ydl:
+        ydl_opts = {
+            "format": "bestvideo+bestaudio/best",
+            "outtmpl": output_path,
+            "quiet": True,
+            "nocheckcertificate": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            return {"title": info.get("title", "تيك توك"), "path": output_path}
+            return {"title": info.get("title", "مقطع تيك توك"), "path": output_path}
     except Exception:
         return None
 
 def search_and_download_audio_robust(query: str, output_base: str):
-    """
-    نظام بحث وتنزيل صوتي متقدم ومضمون:
-    1. محرك يوتيوب الصوتي السريع (YT Music / YouTube)
-    2. محرك ساوند كلاود الاحتياطي (SoundCloud)
-    """
+    """محرك بحث صوتي متدرج لجلب الشيلات والأغاني بصيغة MP3 نقي 320kbps"""
     clean_q = re.sub(r'^(اريد|اعطني|تنزيل|تحميل|شيله|شيلة|اغنيه|اغنية|صوت|زامل)\s*', '', query).strip()
     search_queries = [
         f"ytsearch1:{query}",
         f"ytsearch1:{clean_q} شيلة كاملة mp3",
+        f"ytsearch1:{clean_q} mp3 audio",
         f"scsearch1:{clean_q}"
     ]
 
-    out_file = f"{output_base}.mp3"
     opts = {
         "outtmpl": f"{output_base}.%(ext)s",
         "format": "bestaudio/best",
         "quiet": True,
         "no_warnings": True,
         "nocheckcertificate": True,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
@@ -155,15 +173,13 @@ def search_and_download_audio_robust(query: str, output_base: str):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(sq, download=True)
-                title = "شيلة صوتية"
+                title = "شيلة صوتية كاملة"
                 if "entries" in info and len(info["entries"]) > 0:
                     title = info["entries"][0].get("title", clean_q)
                 elif "title" in info:
                     title = info.get("title", clean_q)
 
-                # البحث عن الملف الناتج بصيغة mp3 أو أي ملف مشتق
-                found_files = glob.glob(f"{output_base}*")
-                for f in found_files:
+                for f in glob.glob(f"{output_base}*"):
                     if os.path.exists(f) and os.path.getsize(f) > 5000:
                         return {"path": f, "title": title}
         except Exception:
@@ -195,4 +211,4 @@ def ask_super_ai(prompt: str) -> str:
             return res.text.strip()
     except Exception:
         pass
-    return f"طلبك بخصوص {prompt} تحت أمرك دائماً يا غالي 🌸✨"
+    return f"طلبك بخصوص <b>{prompt}</b> تحت أمرك دائماً وبأعلى جودة يا غالي 🌸✨"
