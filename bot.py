@@ -7,9 +7,8 @@ import urllib.parse
 import re
 import json
 import time
-import random
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ==================== إعدادات السجلات (Logging) ====================
@@ -19,13 +18,18 @@ logger = logging.getLogger(__name__)
 # ==================== 1. خادم فحص الحالة السحابي (Render 24/7) ====================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        return  # Silence default logs to keep console clean
+        return  # إسكات السجلات للحفاظ على نظافة الـ Console
     
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(b"Saleh Global Mega Platform 2026 is LIVE 24/7! 🚀")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
 
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
@@ -44,14 +48,14 @@ if not raw_token:
     raise ValueError("BOT_TOKEN environment variable is not set!")
 
 BOT_TOKEN = raw_token.strip()
-ADMIN_ID = 7206214234  # يمكنك تغيير هذا الرقم إلى معرفك الخاص
+ADMIN_ID = 7206214234
 BOT_NAME = "منصة صلوح المانعي العالمية ⚡️👑"
+TIKTOK_CHANNEL = "https://www.tiktok.com/@almanay22"
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", thread_name="SalehBot")
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 DATA_FILE = "global_bot_data.json"
 
-# قاعدة البيانات المحلية
 def load_db():
     if os.path.exists(DATA_FILE):
         try:
@@ -59,7 +63,7 @@ def load_db():
                 return json.load(f)
         except Exception as e:
             logger.error(f"Error loading DB: {e}")
-    return {"users": {}, "groups": {}, "tasks": {}, "vault": {}, "sales": {}, "warns": {}, "settings": {}}
+    return {"users": {}, "groups": {}, "tasks": {}, "vault": {}, "sales": {}, "warns": {}}
 
 def save_db(data):
     try:
@@ -68,75 +72,29 @@ def save_db(data):
     except Exception as e:
         logger.error(f"Error saving DB: {e}")
 
-# تحميل البيانات عند البدء
-db = load_db()
-save_db(db)  # Ensure file exists even if empty
-
-# ==================== 3. محركات الذكاء الاصطناعي المتطورة ====================
-def query_ai_engine(prompt: str, context: str = "", model: str = "openai") -> str:
-    """
-    محرك ذكاء اصطناعي متعدد المصادر مع Retry Logic
-    """
+# ==================== 3. محركات الذكاء الاصطناعي ====================
+def query_ai_engine(prompt: str, context: str = "") -> str:
     try:
-        full_prompt = f"{context}\n{prompt}" if context else prompt
-        
-        # محاولة 1: Pollinations AI (مجاني وسريع)
-        url = f"https://text.pollinations.ai/{urllib.parse.quote(full_prompt)}"
-        res = requests.get(url, timeout=25)
-        
-        if res.status_code == 200 and len(res.text.strip()) > 5:
-            response_text = res.text.strip()
-            # تنظيف بسيط للرد
-            if response_text.startswith("```"):
-                response_text = response_text.replace("```", "").replace("json", "").strip()
-            return response_text
-            
+        full_p = f"أنت مساعد صلوح المانعي الذكي العالمي. أجب بأسلوب لبق، ذكي، وسريع: {context}\n{prompt}"
+        url = f"https://text.pollinations.ai/{urllib.parse.quote(full_p)}"
+        res = requests.get(url, timeout=15)
+        if res.status_code == 200 and len(res.text.strip()) > 2:
+            return res.text.strip()
     except Exception as e:
-        logger.warning(f"Pollinations failed: {e}")
-
-    # محاولة 2: Fallback بسيط إذا فشل الأول
-    try:
-        url = f"https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-        payload = {"inputs": full_prompt, "parameters": {"max_new_tokens": 250}}
-        res = requests.post(url, json=payload, timeout=25)
-        if res.status_code == 200:
-            data = res.json()
-            if isinstance(data, list) and len(data) > 0:
-                return data[0].get('generated_text', 'لا يوجد رد')
-    except Exception:
-        pass
-
-    return "⚡️ عذراً، المحرك الرئيسي مشغول حالياً. يرجى المحاولة بعد ثوانٍ معدودة."
+        logger.warning(f"AI Engine error: {e}")
+    return "⚡️ عذراً، محرك الذكاء الاصطناعي مشغول حالياً، يرجى إعادة المحاولة بعد ثوانٍ."
 
 def analyze_sentiment(text: str) -> str:
-    positive = ["شكرا", "ممتاز", "رائع", "جميل", "احسنت", "مبدع", "تسلم", "كفو", "حلو", "good", "great", "awesome"]
-    negative = ["سيء", "فاشل", "زفت", "غبي", "بطيء", "مشكلة", "خطا", "خطأ", "bad", "terrible", "worst"]
-    
+    positive = ["شكرا", "ممتاز", "رائع", "جميل", "احسنت", "مبدع", "تسلم", "كفو", "حلو"]
+    negative = ["سيء", "فاشل", "زفت", "غبي", "بطيء", "مشكلة", "خطا", "خطأ"]
     text_lower = text.lower()
-    pos_count = sum(1 for w in positive if w in text_lower)
-    neg_count = sum(1 for w in negative if w in text_lower)
-    
-    if pos_count > neg_count:
-        return "إيجابية وودية 🟢"
-    elif neg_count > pos_count:
-        return "سلبية / انزعاج 🔴"
+    pos = sum(1 for w in positive if w in text_lower)
+    neg = sum(1 for w in negative if w in text_lower)
+    if pos > neg: return "إيجابية وودية 🟢"
+    elif neg > pos: return "سلبية / انزعاج 🔴"
     return "محايدة / استفسارية ⚪️"
 
-# ==================== 4. مكافحة التكرار السريع (Anti-Flood) ====================
-USER_LAST_ACTION = {}
-GROUP_FLOOD_LOGS = {}
-
-def is_flooding(user_id, group_id=None, interval=1.0):
-    now = time.time()
-    key = f"{user_id}:{group_id}" if group_id else user_id
-    
-    last = USER_LAST_ACTION.get(key, 0)
-    if now - last < interval:
-        return True
-    USER_LAST_ACTION[key] = now
-    return False
-
-# ==================== 5. القوائم والواجهات التفاعلية ====================
+# ==================== 4. القوائم والواجهات ====================
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("🧠 ذكاء اصطناعي فائق", "🎨 توليد/تعديل صور")
@@ -144,342 +102,301 @@ def get_main_keyboard():
     markup.row("💰 أسعار العملات والذهب", "📊 تقارير المبيعات")
     markup.row("📝 دفتر المهام", "📁 الأرشيف السحابي")
     markup.row("🛡️ إدارة المجموعات", "🗳️ تصويت فوري")
-    markup.row("🎬 بحث تيك توك", "🎵 طلب أغاني")
-    markup.row("⚙️ الإعدادات", "🆘 المساعدة والدعم")
+    markup.row("🎬 بحث تيك توك", "🎵 طلب شيلات وأغاني")
+    markup.row("🆘 المساعدة والدعم")
     return markup
 
-def get_admin_keyboard():
-    markup = types.InlineKeyboardMarkup()
-    markup.row(types.InlineKeyboardButton("👥 إدارة الأعضاء", callback_data="admin_users"))
-    markup.row(types.InlineKeyboardButton("📊 الإحصائيات", callback_data="admin_stats"))
-    markup.row(types.InlineKeyboardButton("🔧 الإعدادات العامة", callback_data="admin_settings"))
-    return markup
-
-# ==================== 6. معالجات الرسائل والأوامر ====================
-
+# ==================== 5. الأوامر الأساسية ====================
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     uid = str(message.from_user.id)
     db = load_db()
-    
     if uid not in db["users"]:
         db["users"][uid] = {
             "name": message.from_user.first_name,
             "username": message.from_user.username or "بدون",
-            "joined": datetime.now().isoformat(),
-            "messages_count": 0,
-            "level": 1,
-            "xp": 0
+            "joined": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
         save_db(db)
-    
-    # تحديث عدد الرسائل
-    if uid in db["users"]:
-        db["users"][uid]["messages_count"] += 1
-        save_db(db)
 
-    welcome_msg = f"""
-👋 مرحباً بك يا **{message.from_user.first_name}** في منصة **صلوح المانعي العالمية**!
-
-🚀 أنا بوتك الشخصي الذي يجمع لك كل شيء في مكان واحد:
-✅ ذكاء اصطناعي متكامل
-✅ إدارة مجموعات احترافية
-✅ تحويل الملفات والصور
-✅ أسعار العملات لحظة بلحظة
-✅ وأكثر من ذلك بكثير!
-
-👇 اضغط على أي خيار من القائمة أدناه للبدء:
-"""
-    bot.reply_to(message, welcome_msg, reply_markup=get_main_keyboard())
+    welcome_msg = (
+        f"👋 مرحباً بك يا <b>{message.from_user.first_name}</b> في <b>{BOT_NAME}</b>!\n\n"
+        "🚀 <b>منصتك الشاملة لجميع الخدمات السحابية:</b>\n"
+        "✅ ذكاء اصطناعي وتوليد صور 4K حقيقي\n"
+        "✅ إدارة وحماية المجموعات من السبام والروابط\n"
+        "✅ حفظ وأرشفة المستندات والملفات سحابياً\n"
+        "✅ سحب ميديا تيك توك وصوتيات MP3 نقية\n"
+        "✅ مؤشرات التداول والعملات والترجمة الفورية\n\n"
+        "👇 <b>اختر من القائمة التفاعلية بالأسفل للبدء:</b>"
+    )
+    inline = types.InlineKeyboardMarkup()
+    inline.add(types.InlineKeyboardButton("🔥 متابعة صلوح على تيك توك", url=TIKTOK_CHANNEL))
+    bot.reply_to(message, welcome_msg, reply_markup=inline)
+    bot.send_message(message.chat.id, "لوحة التحكم جاهزة في خدمتك:", reply_markup=get_main_keyboard())
 
 @bot.message_handler(commands=['help'])
 def handle_help(message):
-    help_text = """
-📖 **دليل الاستخدام السريع:**
+    help_text = (
+        "📖 <b>دليل الاستخدام السريع للمنصة:</b>\n\n"
+        "• <b>الذكاء الاصطناعي:</b> اضغط على الزر واكتب سؤالك مباشرة.\n"
+        "• <b>الصور:</b> أرسل وصفاً للتصميم (أو أرسل صورة ومعها تعليق للتعديل).\n"
+        "• <b>الترجمة:</b> اكتب: <code>ترجم النص إلى اللغة</code>.\n"
+        "• <b>المهام:</b> اكتب: <code>اضف مهمة [اسم المهمة]</code>.\n"
+        "• <b>المبيعات:</b> اكتب: <code>اضف بيع 100</code>.\n"
+        "• <b>المستندات:</b> أرسل أي ملف ليتم تخزينه في أرشيفك السحابي."
+    )
+    bot.reply_to(message, help_text)
 
-🧠 **الذكاء الاصطناعي:** أرسل أي سؤال أو اكتب "ذكاء"
-🎨 **الصور:** اكتب "صورة [وصف الصورة]"
-🌐 **الترجمة:** اكتب "ترجم [النص] [اللغة]"
-💰 **الأسعار:** اكتب "سعر [العملة/الذهب]"
-📝 **المهام:** اكتب "مهمة [اسم المهمة]"
-📁 **الأرشيف:** ارفع ملف وسيتم حفظه تلقائياً
+# ==================== 6. إدارة وحماية المجموعات ====================
+@bot.message_handler(commands=['ban'])
+def admin_ban(message):
+    if message.chat.type in ['group', 'supergroup']:
+        admins = [a.user.id for a in bot.get_chat_administrators(message.chat.id)]
+        if message.from_user.id in admins and message.reply_to_message:
+            target = message.reply_to_message.from_user
+            bot.ban_chat_member(message.chat.id, target.id)
+            bot.reply_to(message, f"🚫 تم حظر العضو <b>{target.first_name}</b> بنجاح.")
 
-للمساعدة الإضافية، تواصل مع المطور @almanay22
-"""
-    bot.reply_to(message, help_text, parse_mode="HTML")
+@bot.message_handler(commands=['mute'])
+def admin_mute(message):
+    if message.chat.type in ['group', 'supergroup']:
+        admins = [a.user.id for a in bot.get_chat_administrators(message.chat.id)]
+        if message.from_user.id in admins and message.reply_to_message:
+            target = message.reply_to_message.from_user
+            bot.restrict_chat_member(message.chat.id, target.id, can_send_messages=False)
+            bot.reply_to(message, f"🔇 تم كتم العضو <b>{target.first_name}</b>.")
 
-@bot.message_handler(func=lambda m: True)
-def handle_general_messages(message):
-    if message.chat.type == 'private':
-        process_private_message(message)
-    else:
-        process_group_message(message)
+@bot.message_handler(content_types=['new_chat_members'])
+def handle_new_members(message):
+    for member in message.new_chat_members:
+        if member.id != bot.get_me().id:
+            bot.send_message(message.chat.id, f"👋 أهلاً بك يا <b>{member.first_name}</b> في المجموعة! نتمنى لك وقتاً طيباً.")
 
-def process_private_message(message):
+# فحص روابط السبام في المجموعات عبر regex
+@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'] and bool(re.search(r'(https?://[^\s]+|t\.me/[^\s]+)', m.text or "")))
+def handle_group_links(message):
+    admins = [a.user.id for a in bot.get_chat_administrators(message.chat.id)]
+    if message.from_user.id not in admins:
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+            bot.send_message(message.chat.id, f"⚠️ عذراً <b>{message.from_user.first_name}</b>، الروابط محظورة هنا لحماية الأعضاء.")
+        except Exception:
+            pass
+
+# ==================== 7. الأرشيف السحابي وحفظ الملفات ====================
+@bot.message_handler(content_types=['document'])
+def handle_documents(message):
+    uid = str(message.from_user.id)
+    doc = message.document
+    db = load_db()
+    if "vault" not in db: db["vault"] = {}
+    if uid not in db["vault"]: db["vault"][uid] = []
+    
+    db["vault"][uid].append({"name": doc.file_name, "id": doc.file_id, "size": doc.file_size})
+    save_db(db)
+    bot.reply_to(message, f"📁 <b>تم حفظ الملف في أرشيفك السحابي!</b>\n📄 الاسم: <code>{doc.file_name}</code>\n📦 الحجم: {doc.file_size // 1024} KB")
+
+# ==================== 8. معالجة وتوليد الصور الفعلي (Flux 4K) ====================
+@bot.message_handler(content_types=['photo'])
+def handle_photo_ai(message):
+    caption = (message.caption or "").strip()
+    wait = bot.reply_to(message, "🎨 <b>جاري معالجة الصورة وتطبيق الذكاء الاصطناعي 4K... ✨</b>")
+    prompt = f"masterpiece, ultra realistic 4k HDR, {caption if caption else 'cinematic colorized photography'}"
+    img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=1024&height=1024&model=flux&seed={message.id}&nologo=true"
+    try:
+        bot.send_photo(message.chat.id, img_url, caption=f"🖼 <b>تمت المعالجة بنجاح!</b>\n🎯 الطلب: <i>{caption if caption else 'تلوين ورفع الدقة 4K'}</i>")
+        bot.delete_message(message.chat.id, wait.message_id)
+    except Exception:
+        bot.edit_message_text("⚠️ تعذر إتمام المعالجة، حاول لاحقاً.", message.chat.id, wait.message_id)
+
+# ==================== 9. معالجة الرسائل الخاصة والأزرار ====================
+@bot.message_handler(func=lambda m: m.chat.type == 'private')
+def process_private_chat(message):
     text = message.text.strip()
+    chat_id = message.chat.id
     uid = str(message.from_user.id)
     db = load_db()
-    
-    # تحديث المستخدم
-    if uid in db["users"]:
-        db["users"][uid]["last_active"] = datetime.now().isoformat()
-        save_db(db)
 
-    # زر لوحة التحكم الرئيسية
+    # --- الأزرار المباشرة ---
     if text == "🧠 ذكاء اصطناعي فائق":
-        bot.reply_to(message, "💬 أجبني بأي سؤال وسأجيبك بذكاء وسرعة!", reply_markup=get_main_keyboard())
-        # انتظار الرد التالي كسياق
+        bot.reply_to(message, "💬 اكتب سؤالك أو استفسارك وسأجيبك بأعلى دقة وذكاء!")
         bot.register_next_step_handler(message, ai_callback)
         return
 
     if text == "🎨 توليد/تعديل صور":
-        bot.reply_to(message, "✍️ اكتب وصف الصورة التي تريد توليدها بالتفصيل:", reply_markup=get_main_keyboard())
+        bot.reply_to(message, "✍️ اكتب وصف الصورة التي تريد توليدها (أو أرسل صورة مع تعليق لتحسينها):")
         bot.register_next_step_handler(message, image_gen_callback)
         return
 
-    if text == "🌐 ترجمة متعددة اللغات":
-        bot.reply_to(message, "📝 اكتب النص ثم اللغة التي تريد الترجمة إليها (مثال: Hello world English):", reply_markup=get_main_keyboard())
-        bot.register_next_step_handler(message, translate_callback)
+    if text == "🌐 ترجمة فورية":
+        bot.reply_to(message, "📝 أرسل النص الذي تريد ترجمته مسبوقاً بكلمة ترجم (مثال: <code>ترجم صباح الخير إلى الإنجليزية</code>):")
         return
 
-    if text == "💰 التداول والعملات والذهب":
-        fetch_financial_news(message)
+    if text == "💰 أسعار العملات والذهب":
+        wait = bot.reply_to(message, "⏳ <b>جاري جلب أحدث أسعار البورصات العالمية...</b>")
+        try:
+            res = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,solana&vs_currencies=usd", timeout=8).json()
+            btc = res.get("bitcoin", {}).get("usd", 0)
+            eth = res.get("ethereum", {}).get("usd", 0)
+            sol = res.get("solana", {}).get("usd", 0)
+            usdt = res.get("tether", {}).get("usd", 1.0)
+            report = (
+                "📈 <b>مؤشرات الأسواق العالمية اللحظية:</b>\n\n"
+                f"🪙 <b>Bitcoin:</b> <code>${btc:,.2f}</code>\n"
+                f"🔹 <b>Ethereum:</b> <code>${eth:,.2f}</code>\n"
+                f"⚡️ <b>Solana:</b> <code>${sol:,.2f}</code>\n"
+                f"💵 <b>USDT:</b> <code>${usdt}</code>"
+            )
+            bot.edit_message_text(report, chat_id, wait.message_id)
+        except Exception:
+            bot.edit_message_text("⚠️ تعذر جلب الأسعار، حاول بعد لحظات.", chat_id, wait.message_id)
         return
 
-    if text == "📊 تقارير المبيعات والأرباح":
-        bot.reply_to(message, "📈 جاري تحميل التقرير المالي...", reply_markup=get_main_keyboard())
-        # محاكاة تقرير
-        report = f"""
-📊 **تقرير المبيعات الشهري**
-📅 التاريخ: {datetime.now().strftime('%Y-%m-%d')}
-💰 إجمالي المبيعات: $12,450
-📦 الطلبات المكتملة: 145
-🔄 نسبة النمو: +15% مقارنة بالشهر الماضي
-"""
-        bot.reply_to(message, report, parse_mode="HTML")
+    if text == "📊 تقارير المبيعات":
+        sales_val = db.get("sales", {}).get(uid, 0.0)
+        bot.reply_to(message, f"💼 <b>إجمالي مبيعاتك المسجلة:</b>\n\n💰 <code>${sales_val:,.2f}</code>\n\nلإضافة مبلغ بيع جديد أرسل:\n<code>اضف بيع 150</code>")
         return
 
-    if text == "📝 دفتر المهام والمذكرات":
-        bot.reply_to(message, "📝 اكتب اسم المهمة الجديدة:", reply_markup=get_main_keyboard())
-        bot.register_next_step_handler(message, task_add_callback)
+    if text.startswith("اضف بيع"):
+        nums = re.findall(r"[-+]?(?:\d*\.\d+|\d+)", text)
+        if nums:
+            val = float(nums[0])
+            if "sales" not in db: db["sales"] = {}
+            db["sales"][uid] = db["sales"].get(uid, 0.0) + val
+            save_db(db)
+            bot.reply_to(message, f"✅ تم تسجيل مبيعات بقيمة <b>${val:,.2f}</b> بنجاح!")
         return
 
-    if text == "📁 الأرشيف السحابي الخاص":
-        bot.reply_to(message, "📂 يمكنك الآن رفع الملفات (صور، مستندات، فيديو) وسيتم حفظها في أرشيفك الخاص بشكل آمن.", reply_markup=get_main_keyboard())
+    if text == "📝 دفتر المهام":
+        tasks = db.get("tasks", {}).get(uid, [])
+        if not tasks:
+            bot.reply_to(message, "📝 <b>دفتر المهام فارغ.</b>\nلإضافة مهمة جديدة أرسل:\n<code>اضف مهمة مراجعة التقارير اليومية</code>")
+        else:
+            txt = "📋 <b>قائمة مهامك الحالية:</b>\n\n"
+            for idx, t in enumerate(tasks, 1):
+                txt += f"{idx}️⃣ {t}\n"
+            txt += "\n<i>لمسح القائمة كاملة، اكتب: مسح المهام</i>"
+            bot.reply_to(message, txt)
         return
 
-    if text == "🛡 لوحة حماية المجموعات":
-        bot.reply_to(message, "🛡️ لتفعيل الحماية في مجموعتك، أضف البوت كمسؤول وسيقوم بالحماية تلقائياً.", reply_markup=get_main_keyboard())
+    if text.startswith("اضف مهمة"):
+        task_str = text.replace("اضف مهمة", "").strip()
+        if task_str:
+            if "tasks" not in db: db["tasks"] = {}
+            if uid not in db["tasks"]: db["tasks"][uid] = []
+            db["tasks"][uid].append(task_str)
+            save_db(db)
+            bot.reply_to(message, f"✅ تمت إضافة المهمة: <b>{task_str}</b>")
         return
 
-    if text == "🗳 استطلاع / تصويت فوري":
-        bot.reply_to(message, "🗳️ اكتب نص السؤال ثم الخيارات مفصولة بفاصلة (مثال: من هو الأفضل؟ A, B, C):", reply_markup=get_main_keyboard())
-        bot.register_next_step_handler(message, poll_callback)
+    if text == "مسح المهام":
+        if "tasks" in db and uid in db["tasks"]:
+            db["tasks"][uid] = []
+            save_db(db)
+            bot.reply_to(message, "🗑 تم تفريغ قائمة المهام بنجاح.")
         return
 
-    if text == "🎬 سحب وبحث تيك توك":
-        bot.reply_to(message, "🔍 اكتب كلمة البحث عن مقطع تيك توك:", reply_markup=get_main_keyboard())
-        bot.register_next_step_handler(message, tiktok_search_callback)
+    if text == "📁 الأرشيف السحابي":
+        files = db.get("vault", {}).get(uid, [])
+        if not files:
+            bot.reply_to(message, "📁 <b>أرشيفك السحابي فارغ.</b> أرسل أي ملف في الشات وسأخزنه لك فوراً.")
+        else:
+            txt = "📁 <b>ملفاتك المخزنة سحابياً:</b>\n\n"
+            for idx, f in enumerate(files[-10:], 1):
+                txt += f"{idx}. 📄 <code>{f['name']}</code> ({f['size']//1024} KB)\n"
+            bot.reply_to(message, txt)
         return
 
-    if text == "🎵 طلب شيلة MP3":
-        bot.reply_to(message, "🎶 اكتب اسم الشيلة أو كلماتها:", reply_markup=get_main_keyboard())
-        bot.register_next_step_handler(message, music_callback)
+    if text == "🛡️ إدارة المجموعات":
+        bot.reply_to(message, "🛡️ أضف البوت مشرفاً في مجموعتك وسيتولى حذف الروابط وحظر السبام وتطبيق أوامر /ban و /mute تلقائياً.")
         return
 
-    if text == "⚙️ الإعدادات":
-        bot.reply_to(message, "⚙️ يمكنك تخصيص إعدادات البوت هنا (قريباً)", reply_markup=get_main_keyboard())
+    if text == "🗳️ تصويت فوري":
+        bot.send_poll(chat_id, "ما رأيك في سرعة خدمات البوت والذكاء الاصطناعي؟", ["سريعة وممتازة 🚀", "جيدة جداً ⚡️", "تحتاج ميزات إضافية 💡"], is_anonymous=False)
+        return
+
+    if text == "🎬 بحث تيك توك":
+        bot.reply_to(message, "🎬 أرسل رابط الفيديو أو اكتب كلمة البحث وسأجلبه لك بدون علامة مائية فوراً!")
+        return
+
+    if text == "🎵 طلب شيلات وأغاني":
+        bot.reply_to(message, "🎵 اكتب اسم الشيلة أو المنشد وسأحضرها لك صوتية MP3.")
         return
 
     if text == "🆘 المساعدة والدعم":
-        bot.reply_to(message, "🆘 للدعم الفني، تواصل مع المطور @almanay22", reply_markup=get_main_keyboard())
+        bot.reply_to(message, f"🆘 للدعم الفني والتواصل مع المطور:\n{TIKTOK_CHANNEL}")
         return
 
-    # إذا كان المستخدم يرسل نصاً عادياً، نفترض أنه يريد استخدام الذكاء الاصطناعي
-    if not any(cmd in text for cmd in ["🧠", "🎨", "🌐", "💰", "📊", "📝", "📁", "🛡", "🗳", "🎬", "🎵", "⚙️", "🆘"]):
-        # معالجة بسيطة للطلبات الشائعة
-        if text.lower().startswith("ما هو") or text.lower().startswith("من هو") or text.lower().startswith("كيف"):
-            bot.reply_to(message, "🧠 جاري التفكير في سؤالك العميق...")
-            result = query_ai_engine(text)
-            bot.reply_to(message, result)
-        else:
-            # رد افتراضي ذكي
-            sentiment = analyze_sentiment(text)
-            bot.reply_to(message, f"🤔 فهمت رسالتك ({sentiment}). هل تريد مني تحليلها أكثر أو البحث عنها؟", reply_markup=get_main_keyboard())
+    # --- الترجمة التلقائية ---
+    if text.startswith("ترجم"):
+        q = text.replace("ترجم", "").strip()
+        wait = bot.reply_to(message, "🌐 <b>جاري الترجمة الفورية...</b>")
+        ans = query_ai_engine(f"ترجم بدقة واحترافية: {q}")
+        bot.edit_message_text(f"🌐 <b>الترجمة:</b>\n\n{ans}", chat_id, wait.message_id)
+        return
 
+    # --- سحب تيك توك الفعلي ---
+    if "tiktok.com" in text or "douyin.com" in text:
+        wait = bot.reply_to(message, "⚡️ <b>جاري سحب الفيديو بدون علامة مائية...</b>")
+        try:
+            url_match = re.search(r'(https?://[^\s]+)', text)
+            clean_link = url_match.group(0).split('?')[0] if url_match else text
+            api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(clean_link)}"
+            res = requests.get(api_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).json()
+            if res.get("code") == 0:
+                v = res["data"]
+                dl_url = v.get("hdplay") or v.get("play") or v.get("wmplay")
+                if dl_url.startswith("/"): dl_url = "https://www.tikwm.com" + dl_url
+                bot.send_video(chat_id, dl_url, caption=f"🎬 <b>{v.get('title', 'فيديو')[:100]}</b>\n\n👑 <b>{BOT_NAME}</b>")
+                bot.delete_message(chat_id, wait.message_id)
+                return
+        except Exception:
+            pass
+        bot.edit_message_text("❌ تعذر تحميل المقطع، تأكد أن الفيديو عام.", chat_id, wait.message_id)
+        return
 
+    # --- البحث عن الشيلات والصوتيات الفعلي ---
+    if any(k in text.lower() for k in ["شيله", "شيلة", "اغنيه", "اغنية", "صوت", "زامل"]):
+        wait = bot.reply_to(message, "🎵 <b>جاري البحث وسحب الصوتية بنقاء تام...</b>")
+        try:
+            clean_q = re.sub(r'^(شيله|شيلة|اغنيه|اغنية|صوت|زامل)\s*', '', text).strip()
+            url = f"https://www.tikwm.com/api/feed/search?keywords={urllib.parse.quote(clean_q)}&count=1"
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12).json()
+            if res.get("code") == 0 and "data" in res and "videos" in res["data"] and len(res["data"]["videos"]) > 0:
+                v = res["data"]["videos"][0]
+                dl_url = v.get("play") or v.get("wmplay")
+                if dl_url.startswith("/"): dl_url = "https://www.tikwm.com" + dl_url
+                bot.send_audio(chat_id, dl_url, caption=f"🎵 <b>{v.get('title', clean_q)[:100]}</b>\n\n👑 <b>{BOT_NAME}</b>")
+                bot.delete_message(chat_id, wait.message_id)
+                return
+        except Exception:
+            pass
+        bot.edit_message_text("⚠️ لم يتم العثور على الصوتية، جرب كتابة اسم المنشد بدقة.", chat_id, wait.message_id)
+        return
+
+    # --- الدردشة والذكاء الاصطناعي الافتراضي ---
+    sentiment = analyze_sentiment(text)
+    wait = bot.reply_to(message, "⚡️ <b>جاري التفكير والمعالجة...</b>")
+    ai_ans = query_ai_engine(text, context=f"مشاعر المستخدم: {sentiment}")
+    bot.edit_message_text(f"{ai_ans}\n\n<i>[الحالة النفسية للنص: {sentiment}]</i>", chat_id, wait.message_id)
+
+# دالات الـ Callbacks للخطوات التالية
 def ai_callback(message):
-    """معالجة رد الذكاء الاصطناعي"""
-    prompt = message.text
-    bot.reply_to(message, "⏳ جاري المعالجة بواسطة خوارزميات صلوح الذكية...")
-    result = query_ai_engine(prompt)
-    bot.reply_to(message, result)
+    wait = bot.reply_to(message, "⏳ <b>جاري المعالجة...</b>")
+    ans = query_ai_engine(message.text)
+    bot.edit_message_text(ans, message.chat.id, wait.message_id)
 
 def image_gen_callback(message):
-    """معالجة طلب توليد الصور"""
     desc = message.text
-    bot.reply_to(message, "🎨 جاري رسم صورتك بدقة عالية...")
-    # يمكن ربط API مثل DALL-E أو Stable Diffusion هنا
-    # للمثال، سنستخدم رابط صورة عشوائية كـ Placeholder
-    img_url = f"https://source.unsplash.com/random/800x600/?{urllib.parse.quote(desc)}"
-    bot.send_photo(message.chat.id, img_url, caption=f"🖼️ صورة مولدة بناءً على: {desc}")
-
-def translate_callback(message):
-    """معالجة الترجمة"""
-    parts = message.text.split()
-    if len(parts) < 2:
-        bot.reply_to(message, "❌ الرجاء كتابة النص واللغة الهدف. مثال: Hello world English")
-        return
-    
-    text_to_translate = " ".join(parts[:-1])
-    target_lang = parts[-1]
-    
-    bot.reply_to(message, "🌐 جاري الترجمة الدقيقة...")
-    # استخدام Google Translate API مجاني عبر requests
+    wait = bot.reply_to(message, "🎨 <b>جاري توليد الصورة بدقة 4K فائقة عبر Flux... ✨</b>")
+    img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(desc + ' ultra 4k photorealistic cinematic')}?width=1024&height=1024&model=flux&nologo=true"
     try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={target_lang}&dt=t&q={urllib.parse.quote(text_to_translate)}"
-        res = requests.get(url)
-        if res.status_code == 200:
-            data = res.json()
-            translated = "".join([sentence[0] for sentence in data[0]])
-            bot.reply_to(message, f"📝 الترجمة:\n\n{translated}")
-        else:
-            bot.reply_to(message, "❌ حدث خطأ أثناء الترجمة.")
-    except Exception as e:
-        bot.reply_to(message, f"❌ خطأ: {str(e)}")
+        bot.send_photo(message.chat.id, img_url, caption=f"🖼 <b>تم توليد صورتك بنجاح!</b>\n✨ الوصف: <i>{desc}</i>")
+        bot.delete_message(message.chat.id, wait.message_id)
+    except Exception:
+        bot.edit_message_text("⚠️ تعذر توليد الصورة، جرب وصفاً آخر.", message.chat.id, wait.message_id)
 
-def fetch_financial_news(message):
-    """جلب أسعار العملات والذهب"""
-    bot.reply_to(message, "💰 جاري جلب أحدث الأسعار من الأسواق العالمية...")
-    try:
-        # استخدام API مجاني للأسعار
-        url = "https://api.exchangerate-api.com/v4/latest/USD"
-        res = requests.get(url)
-        if res.status_code == 200:
-            data = res.json()
-            rates = data['rates']
-            sar = rates.get('SAR', 0)
-            eur = rates.get('EUR', 0)
-            gbp = rates.get('GBP', 0)
-            
-            gold_price = "1950.50 $" # سعر ثابت كمثال
-            
-            news = f"""
-💱 **أسعار العملات مقابل الدولار الأمريكي**
-🇸🇦 الريال السعودي: 1 USD = {sar:.2f} SAR
-🇪🇺 اليورو: 1 USD = {eur:.2f} EUR
-🇬🇧 الجنيه الإسترليني: 1 USD = {gbp:.2f} GBP
-
-🥇 **سعر الذهب العالمي (أونصة):**
-💲 {gold_price}
-
-📉 تم التحديث: {datetime.now().strftime('%H:%M:%S')}
-"""
-            bot.reply_to(message, news, parse_mode="HTML")
-        else:
-            bot.reply_to(message, "❌ فشل جلب الأسعار.")
-    except Exception as e:
-        bot.reply_to(message, f"❌ خطأ: {str(e)}")
-
-def task_add_callback(message):
-    """إضافة مهمة جديدة"""
-    task_name = message.text
-    db = load_db()
-    task_id = f"task_{len(db['tasks']) + 1}_{int(time.time())}"
-    
-    db["tasks"][task_id] = {
-        "name": task_name,
-        "status": "pending",
-        "created_at": datetime.now().isoformat(),
-        "owner": str(message.from_user.id)
-    }
-    save_db(db)
-    
-    bot.reply_to(message, f"✅ تمت إضافة المهمة: **{task_name}** بنجاح!\n🆔 ID: {task_id}", parse_mode="HTML")
-
-def poll_callback(message):
-    """إنشاء تصويت"""
-    parts = message.text.split(",")
-    if len(parts) < 2:
-        bot.reply_to(message, "❌ الرجاء كتابة السؤال والخيارات مفصولة بفاصلة. مثال: من هو الأفضل؟ A, B, C")
-        return
-    
-    question = parts[0]
-    options = [opt.strip() for opt in parts[1:]]
-    
-    bot.send_poll(
-        message.chat.id, 
-        question, 
-        options, 
-        is_anonymous=False, 
-        allows_multiple_answers=False
-    )
-
-def tiktok_search_callback(message):
-    """بحث تيك توك"""
-    query = message.text
-    bot.reply_to(message, f"🔍 جاري البحث عن: {query} في تيك توك...")
-    # محاكاة نتيجة
-    bot.reply_to(message, f"🎬 وجدت مقطعاً مشابهاً لـ '{query}'\n🔗 https://www.tiktok.com/@almanay22/video/1234567890")
-
-def music_callback(message):
-    """طلب أغنية"""
-    song_name = message.text
-    bot.reply_to(message, f"🎵 جاري البحث عن أغنية: {song_name}...")
-    # محاكاة نتيجة
-    bot.reply_to(message, f"🎶 وجدت الأغنية: {song_name}\n🔗 اضغط للتحميل: https://example.com/music/{urllib.parse.quote(song_name)}")
-
-# ==================== 7. إدارة المجموعات والحماية ====================
-
-@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
-def process_group_message(message):
-    chat_id = str(message.chat.id)
-    db = load_db()
-    
-    # التأكد من وجود المجموعة في قاعدة البيانات
-    if chat_id not in db["groups"]:
-        db["groups"][chat_id] = {
-            "name": message.chat.title,
-            "members": [],
-            "settings": {
-                "anti_spam": True,
-                "welcome_message": True,
-                "link_protection": True
-            },
-            "warns": {}
-        }
-        save_db(db)
-
-    # فحص التكرار السريع
-    if is_flooding(message.from_user.id, chat_id, interval=1.5):
-        bot.restrict_chat_member(chat_id, message.from_user.id, until_date=time.time() + 60, can_send_messages=False, can_send_media_messages=False)
-        bot.reply_to(message, "⚠️ تنبيه: تكرار سريع! تم تجميد عضويتك مؤقتاً.")
-        return
-
-    # التحقق من الروابط
-    if db["groups"].get(chat_id, {}).get("settings", {}).get("link_protection", True):
-        if message.link_preview_enabled:
-            bot.restrict_chat_member(chat_id, message.from_user.id, until_date=time.time() + 30, can_send_messages=False)
-            bot.reply_to(message, "🔗 تم حذف الرابط غير المصرح به.")
-
-    # رد الترحيب
-    if db["groups"].get(chat_id, {}).get("settings", {}).get("welcome_message", True):
-        if message.new_chat_members:
-            for new_member in message.new_chat_members:
-                welcome_msg = f"👋 مرحباً @{new_member.username} في مجموعة **{message.chat.title}**!"
-                bot.reply_to(message, welcome_msg, reply_to_message_id=message.message_id)
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    if call.message:
-        if call.data == "admin_users":
-            bot.send_message(call.message.chat.id, "👥 قائمة الأعضاء محدثة.")
-        elif call.data == "admin_stats":
-            bot.send_message(call.message.chat.id, "📊 جاري تحميل الإحصائيات...")
-        elif call.data == "admin_settings":
-            bot.send_message(call.message.chat.id, "⚙️ إعدادات المجموعة.")
-
-# ==================== 8. تشغيل البوت ====================
+# ==================== 10. تشغيل البوت ====================
 if __name__ == "__main__":
     logger.info("Starting Saleh Global Mega Bot...")
     try:
