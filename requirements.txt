@@ -1,11 +1,2 @@
-python-telegram-bot==20.7
-aiohttp
+pyTelegramBotAPI
 requests
-jinja2
-lxml
-openpyxl
-pillow
-translatepy
-psutil
-schedule
-apscheduler
