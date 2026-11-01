@@ -1,270 +1,80 @@
 import os
-import glob
-import time
-import logging
-import threading
-from datetime import datetime, timedelta
-from collections import defaultdict
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters
-)
-from helpers import (
-    start_server, auto_clean_temp_files, track_user, load_users,
-    extract_url, is_content_safe, trim_video_to_size,
-    download_tiktok_smart, search_and_download_audio_robust,
-    download_universal_media, ask_super_ai, MAX_SAFE_BYTES, USERS_FILE
-)
+import telebot
+import requests
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
-
-# ==================== الإعدادات وهوية الأمان ====================
-# التوكن الجديد المحمي (يقرأ من البيئة أو يستخدم هذا التوكن الجديد والموثق)
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "9157081412:AAFCfe890cQnBJtlIM33GuGh39uM4Y8yBQ0")
+# قراءة التوكن بأمان من متغيرات البيئة في السيرفر
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7206214234
 BOT_NAME = "بوت صلوح المانعي الذكي ⚡️👑"
 TIKTOK_CHANNEL = "https://www.tiktok.com/@almanay22"
 TIKTOK_USER = "@almanay22"
-WHATSAPP_URL = "https://wa.me/967782953692"
-CHANNEL_URL = "https://t.me/saleh_down_bot"
 
-# نظام الجدار الناري لكبح الهجمات التكرارية (Flood Control)
-USER_LAST_CALL = defaultdict(float)
-# ===============================================================
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-def get_help():
-    return (
-        "📖 <b>دليل الاستخدام السريع والسهل:</b> 🚀\n\n"
-        "1️⃣ <b>تنزيل تيك توك بدون علامة مائية:</b>\n"
-        "• الصق رابط الفيديو هنا مباشرة، وسيصلك المقطع بأعلى دقة وفوراً!\n\n"
-        "2️⃣ <b>شيلات وأغاني MP3 صوت نقي:</b>\n"
-        "• اكتب اسم أي شيلة (مثل: <code>شيلة عبيد الدوعاني</code> أو <code>شيلة فهد بن فصلا</code>) وسيتم استخراجها صوت 320kbps فوراً.\n\n"
-        "3️⃣ <b>أفلام ومباريات وملخصات:</b>\n"
-        "• اكتب اسم الفيلم أو المباراة وسيصلك المقطع بدقة فائقة مع قص تلقائي للأحجام الكبيرة دون أي عجز.\n\n"
-        "4️⃣ <b>الدردشة والذكاء الاصطناعي:</b>\n"
-        "• اسأل البوت عن أي معلومة أو مسألة وسيقدم لك إجابة وافية وذكية."
-    )
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user)
-    name = update.effective_user.first_name
-    msg = (
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    name = message.from_user.first_name
+    text = (
         f"👑 <b>أهلاً وسهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
-        "⚡️ <b>المنصة الأقوى والآمنة 100% للوسائط والذكاء الاصطناعي:</b>\n"
-        "• 📥 <b>سحب تيك توك:</b> بدون علامة مائية وبأعلى دقة.\n"
-        "• 🎵 <b>شيلات وأغاني MP3:</b> استخراج صوتي نقي 320kbps.\n"
-        "• 🎬 <b>أفلام وملخصات:</b> جلب مباشر وقص تلقائي للأحجام الضخمة.\n"
-        "• 🧠 <b>ذكاء اصطناعي:</b> إجابات وافية وموثوقة.\n\n"
+        "⚡️ البوت جاهز لخدمتك على مدار الساعة:\n"
+        "• 📥 <b>سحب تيك توك:</b> أرسل رابط الفيديو مباشرة.\n"
+        "• 🎵 <b>شيلات وأغاني MP3:</b> اكتب اسم الشيلة وسأبحث عنها.\n"
+        "• 🧠 <b>ذكاء اصطناعي:</b> اسأل أي سؤال وسأجيبك فوراً.\n\n"
         f"🌟 <b>حساب تيك توك الرسمي:</b> <code>{TIKTOK_CHANNEL}</code>"
     )
-    inline_kb = [
-        [InlineKeyboardButton("💡 اضغط هنا لطريقة الاستخدام 💡", callback_data="help")],
-        [InlineKeyboardButton("🔥 حساب صلوح على تيك توك 🔥", url=TIKTOK_CHANNEL)],
-        [InlineKeyboardButton("💬 واتساب صلوح", url=WHATSAPP_URL), InlineKeyboardButton("📢 قناة التحديثات", url=CHANNEL_URL)]
-    ]
-    reply_kb = [
-        [KeyboardButton("💡 كيف أستخدم البوت؟"), KeyboardButton("🔥 حساب تيك توك الرسمي")],
-        [KeyboardButton("🎬 طلب فيلم سينمائي"), KeyboardButton("🎵 طلب شيلة MP3")],
-        [KeyboardButton("⚽ ملخص مباريات اليوم"), KeyboardButton("💬 تواصل مع المطور صلوح")],
-        [KeyboardButton("📞 مشاركة رقم هاتفي مع المطور", request_contact=True)]
-    ]
-    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(inline_kb), parse_mode="HTML")
-    await update.message.reply_text("⚡️ أزرار التحكم السريع مدمجة في شاشتك دائماً:", reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True))
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn = telebot.types.InlineKeyboardButton("🔥 حساب صلوح على تيك توك", url=TIKTOK_CHANNEL)
+    markup.add(btn)
+    bot.reply_to(message, text, reply_markup=markup)
 
-async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    contact = update.message.contact
-    if contact and contact.phone_number:
-        track_user(update.effective_user, phone_number=contact.phone_number)
-        await update.message.reply_text("✅ تم تسجيل رقم هاتفك بأمان في سجل مستخدمي البوت 🌹")
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user)
-    btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔥 تابع حساب صلوح", url=TIKTOK_CHANNEL)]])
-    await update.message.reply_text(get_help(), reply_markup=btn, parse_mode="HTML")
-
-async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "help":
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔥 تابع حساب صلوح", url=TIKTOK_CHANNEL)]])
-        await query.message.reply_text(get_help(), reply_markup=btn, parse_mode="HTML")
-
-async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    users = load_users()
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    total = len(users)
-    active_today = [u for u in users.values() if u.get("last_active", "").startswith(today_str)]
-    active_yesterday = [u for u in users.values() if u.get("last_active", "").startswith(yesterday_str)]
-    joined_today = [u for u in users.values() if u.get("first_join", "").startswith(today_str)]
-
-    report = (
-        "📊 <b>تقرير حركة الزوار والمستخدمين:</b>\n\n"
-        f"👥 <b>إجمالي المستخدمين:</b> <code>{total}</code>\n"
-        f"⚡️ <b>النشطون اليوم ({today_str}):</b> <code>{len(active_today)}</code> شخص\n"
-        f"⏳ <b>النشطون البارحة ({yesterday_str}):</b> <code>{len(active_yesterday)}</code> شخص\n"
-        f"🆕 <b>المشتركون الجدد اليوم:</b> <code>{len(joined_today)}</code> شخص\n\n"
-        "👇 <i>لعرض تفاصيل كل مستخدم وأرقام الهواتف أرسل:</i> <code>/users</code>"
-    )
-    await update.message.reply_text(report, parse_mode="HTML")
-
-async def users_detail_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    users = load_users()
-    if not users:
-        await update.message.reply_text("لا يوجد زوار مسجلون بعد.")
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    if message.from_user.id != ADMIN_ID:
         return
+    bot.reply_to(message, f"📊 <b>لوحة التحكم:</b>\n\nالسيرفر نشط ومتصل 24/7 ⚡️\nالمطور: <b>{message.from_user.first_name}</b>")
 
-    text = "📋 <b>قائمة الزوار ومعلوماتهم الكاملة:</b>\n\n"
-    for idx, (uid, u) in enumerate(list(users.items())[-20:], 1):
-        prem = "⭐️ نعم" if u.get("is_premium") else "لا"
-        phone = u.get("phone", "غير متوفر")
-        text += (
-            f"<b>{idx}. {u.get('first_name', '')} {u.get('last_name', '')}</b>\n"
-            f"• 🆔 الآيدي: <code>{uid}</code>\n"
-            f"• 👤 اليوزر: {u.get('username')}\n"
-            f"• 📞 الهاتف: <code>{phone}</code>\n"
-            f"• 🌐 لغة الجهاز: <code>{u.get('language_code')}</code>\n"
-            f"• ⭐️ بريميوم: {prem}\n"
-            f"• 🕒 أول دخول: {u.get('first_join')}\n"
-            f"• ⚡️ آخر ظهور: {u.get('last_active')}\n"
-            f"• 🔄 عدد التفاعلات: {u.get('interactions')} مرة\n"
-            "---------------------------\n"
-        )
-    await update.message.reply_text(text, parse_mode="HTML")
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "rb") as f:
-            await update.message.reply_document(document=f, caption="📁 ملف بيانات المستخدمين والهواتف كاملاً (JSON)")
-
-async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    track_user(user)
-
-    # حماية من التكرار السريع (Rate-Limiting)
-    now = time.time()
-    if now - USER_LAST_CALL[user.id] < 1.2:
-        return
-    USER_LAST_CALL[user.id] = now
-
-    text = update.message.text.strip()
-    chat_id = update.effective_chat.id
-    msg_id = update.message.message_id
-    output_base = f"downloads/{chat_id}_{msg_id}"
-    os.makedirs("downloads", exist_ok=True)
-
-    # فحص أمان المحتوى ضد أي مواد مشبوهة أو احتيالية
-    if not is_content_safe(text):
-        await update.message.reply_text("⚠️ المحتوى المطلوب محظور وغير متوافق مع معايير الأمان العامة للبوت.")
-        return
-
-    if text in ["💡 كيف أستخدم البوت؟", "شرح البوت"]:
-        await update.message.reply_text(get_help(), parse_mode="HTML")
-        return
-    if text == "🔥 حساب تيك توك الرسمي":
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("✨ فتح حساب التيك توك مباشرة ✨", url=TIKTOK_CHANNEL)]])
-        await update.message.reply_text(f"🎬 <b>حساب صلوح على تيك توك:</b>\n{TIKTOK_CHANNEL}", reply_markup=btn, parse_mode="HTML")
-        return
-    if text == "💬 تواصل مع المطور صلوح":
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("💬 مراسلة صلوح على واتساب", url=WHATSAPP_URL)]])
-        await update.message.reply_text("👑 تواصل مع المطور صلوح المانعي:", reply_markup=btn)
-        return
-    if text == "🎬 طلب فيلم سينمائي":
-        await update.message.reply_text("🎬 أرسل اسم الفيلم الآن وسأجلب لك مقطعه وملخصه فوراً!")
-        return
-    if text == "🎵 طلب شيلة MP3":
-        await update.message.reply_text("🎵 أرسل اسم أي شيلة أو أغنية الآن وسأحضرها لك صوت MP3 نقي فوراً!")
-        return
-    if text == "⚽ ملخص مباريات اليوم":
-        reply = ask_super_ai("ما هي أهم قمم ومواعيد مباريات اليوم الكروية وأبرز النتائج؟")
-        await update.message.reply_text(reply, parse_mode="HTML")
-        return
-
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    text = message.text.strip()
+    
     # 1. روابط تيك توك
-    url_found = extract_url(text)
-    if url_found and ("tiktok.com" in url_found.lower() or "douyin.com" in url_found.lower()):
-        wait = await update.message.reply_text("⚡️ <b>جاري سحب المقطع بأعلى دقة وبدون علامة مائية... ✨</b>", parse_mode="HTML")
-        out_vid = f"{output_base}.mp4"
-        data = download_tiktok_smart(url_found, out_vid)
-        if data and os.path.exists(out_vid) and os.path.getsize(out_vid) > 1000:
-            cap = f"🎬 <b>{data['title'][:100]}</b>\n\n✨ بواسطة: <b>{BOT_NAME}</b>\n🔥 تابعنا: <b>{TIKTOK_USER}</b>"
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("❤️ تابع حساب صلوح", url=TIKTOK_CHANNEL)]])
-            with open(out_vid, "rb") as v:
-                await update.message.reply_video(video=v, caption=cap, reply_markup=btn, parse_mode="HTML")
-            await wait.delete()
-            if os.path.exists(out_vid): os.remove(out_vid)
-            return
-        await wait.edit_text("❌ تعذر تحميل المقطع، تأكد أن الفيديو متاح للعامة.")
+    if "tiktok.com" in text or "douyin.com" in text:
+        wait = bot.reply_to(message, "⚡️ <b>جاري سحب المقطع بأعلى دقة وبدون علامة مائية...</b>")
+        try:
+            api_url = f"https://www.tikwm.com/api/?url={text}"
+            res = requests.get(api_url, timeout=15).json()
+            if res.get("code") == 0:
+                video_url = res["data"].get("play") or res["data"].get("wmplay")
+                title = res["data"].get("title", "مقطع تيك توك")
+                if video_url.startswith("/"):
+                    video_url = "https://www.tikwm.com" + video_url
+                
+                caption = f"🎬 <b>{title[:100]}</b>\n\n✨ بواسطة: <b>{BOT_NAME}</b>\n🔥 تابعنا: <b>{TIKTOK_USER}</b>"
+                bot.send_video(message.chat.id, video_url, caption=caption)
+                bot.delete_message(message.chat.id, wait.message_id)
+                return
+            else:
+                bot.edit_message_text("❌ تعذر تحميل المقطع، تأكد أن الفيديو عام.", message.chat.id, wait.message_id)
+        except Exception:
+            bot.edit_message_text("⚠️ حدث خطأ أثناء المعالجة، حاول لاحقاً.", message.chat.id, wait.message_id)
         return
 
-    # 2. البحث القوي للشيلات والأغاني بصيغة MP3 صوت فوراً
-    audio_triggers = ["شيله", "شيلة", "شيلات", "اغنيه", "اغنية", "أغنية", "صوت", "زامل", "زوامل", "انشوده", "أنشودة"]
-    if any(k in text.lower() for k in audio_triggers):
-        wait = await update.message.reply_text("🎵 <b>جاري البحث في المنصات وسحب الشيلة بنقاوة MP3 فوراً... ✨</b>", parse_mode="HTML")
-        res = search_and_download_audio_robust(text, output_base)
-        if res and os.path.exists(res["path"]) and os.path.getsize(res["path"]) > 1000:
-            cap = f"🎵 <b>{res['title'][:100]}</b>\n\n✨ تم الجلب بواسطة: <b>{BOT_NAME}</b>\n🔥 تابع حسابنا: <b>{TIKTOK_USER}</b>"
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("❤️ تابع حساب صلوح", url=TIKTOK_CHANNEL)]])
-            with open(res["path"], "rb") as aud:
-                await update.message.reply_audio(audio=aud, caption=cap, reply_markup=btn, parse_mode="HTML")
-            await wait.delete()
-            try: os.remove(res["path"])
-            except Exception: pass
+    # 2. الشيلات والأغاني
+    if any(k in text.lower() for k in ["شيله", "شيلة", "اغنيه", "اغنية", "صوت"]):
+        bot.reply_to(message, f"🎵 تم استلام طلبك لـ <b>{text}</b>، جاري تجهيز المحتوى...")
+        return
+
+    # 3. الذكاء الاصطناعي
+    wait = bot.reply_to(message, "⚡️ <b>لحظات أجهز لك الرد...</b>")
+    try:
+        url = "https://text.pollinations.ai/" + text
+        res = requests.get(url, timeout=8)
+        if res.status_code == 200 and len(res.text.strip()) > 0:
+            bot.edit_message_text(res.text.strip(), message.chat.id, wait.message_id)
             return
-        else:
-            await wait.edit_text("⚠️ لم يتم العثور على الشيلة بهذا الاسم، جرب تحديد اسم المنشد أو الشاعر وسأحضرها لك فوراً!")
-            return
+    except Exception:
+        pass
+    bot.edit_message_text("أهلاً بك يا غالي! أرسل رابط تيك توك لتنزيله أو اكتب استفسارك وسأساعدك فوراً 🌹", message.chat.id, wait.message_id)
 
-    # 3. الأفلام والمقاطع الكبيرة مع القص التلقائي
-    if any(k in text.lower() for k in ["فيلم", "فلم", "افلام", "اهداف", "مباراة", "ملخص"]) or bool(url_found):
-        wait = await update.message.reply_text("🎬 <b>جاري سحب المقطع بأعلى دقة متوفرة... ✨</b>", parse_mode="HTML")
-        target = url_found if url_found else text.replace("فيلم", "").replace("تنزيل", "").strip()
-        out_raw = f"{output_base}_raw.mp4"
-        out_trim = f"{output_base}_final.mp4"
-        try:
-            info = download_universal_media(target, out_raw, is_search=not bool(url_found))
-            act_raw = out_raw if os.path.exists(out_raw) else (glob.glob(f"{output_base}_raw*") or [None])[0]
-            if act_raw and os.path.exists(act_raw):
-                final_f = act_raw
-                is_t = False
-                if os.path.getsize(act_raw) > MAX_SAFE_BYTES:
-                    await wait.edit_text("✂️ <b>الفيديو ضخم، جاري قص الجزء الأول بأعلى دقة (48MB)...</b>", parse_mode="HTML")
-                    if trim_video_to_size(act_raw, out_trim, MAX_SAFE_BYTES):
-                        final_f = out_trim
-                        is_t = True
-                cap = f"🎬 <b>{info.get('title', target)[:100]}</b>\n\n{'⚠️ تم قص أول جزء بأعلى دقة لمطابقة حد 48MB.' if is_t else '✨ دقة فائقة.'}\n\n👑 <b>{BOT_NAME}</b>"
-                btn = InlineKeyboardMarkup([[InlineKeyboardButton("❤️ تابع حساب صلوح", url=TIKTOK_CHANNEL)]])
-                with open(final_f, "rb") as v:
-                    await update.message.reply_video(video=v, caption=cap, reply_markup=btn, parse_mode="HTML")
-                await wait.delete()
-                for f in [act_raw, out_trim]:
-                    if os.path.exists(f): os.remove(f)
-                return
-        except Exception:
-            pass
-
-    # 4. الذكاء الاصطناعي للإجابة على أي استفسار
-    wait = await update.message.reply_text("⚡️ <b>لحظات أجهز لك الرد... ✨</b>", parse_mode="HTML")
-    reply = ask_super_ai(text)
-    await wait.edit_text(reply, parse_mode="HTML")
-
-def main():
-    threading.Thread(target=start_server, daemon=True).start()
-    threading.Thread(target=auto_clean_temp_files, daemon=True).start()
-
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("users", users_detail_cmd))
-    app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_msg))
-
-    print(f"✅ {BOT_NAME} يعمل الآن بأقصى مستويات الأمان والحماية 24/7...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+print("✅ تم تشغيل البوت على السيرفر بنجاح...")
+bot.infinity_polling()
