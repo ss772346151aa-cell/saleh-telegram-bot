@@ -1,8 +1,26 @@
 import os
 import telebot
 import requests
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# قراءة التوكن بأمان من متغيرات البيئة في السيرفر
+# 1. خادم ويب مدمج لخدمة فحص Render
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Bot Server is Live and Running 24/7!")
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# تشغيل خادم الويب في خيط منفصل (Thread)
+threading.Thread(target=run_health_server, daemon=True).start()
+
+# 2. إعدادات وتشغيل بوت التيليجرام
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7206214234
 BOT_NAME = "بوت صلوح المانعي الذكي ⚡️👑"
@@ -16,7 +34,7 @@ def send_welcome(message):
     name = message.from_user.first_name
     text = (
         f"👑 <b>أهلاً وسهلاً بك يا {name} في {BOT_NAME}!</b>\n\n"
-        "⚡️ البوت جاهز لخدمتك على مدار الساعة:\n"
+        "⚡️ البوت شغال على السيرفر 24 ساعة سحابياً:\n"
         "• 📥 <b>سحب تيك توك:</b> أرسل رابط الفيديو مباشرة.\n"
         "• 🎵 <b>شيلات وأغاني MP3:</b> اكتب اسم الشيلة وسأبحث عنها.\n"
         "• 🧠 <b>ذكاء اصطناعي:</b> اسأل أي سؤال وسأجيبك فوراً.\n\n"
@@ -31,13 +49,13 @@ def send_welcome(message):
 def show_stats(message):
     if message.from_user.id != ADMIN_ID:
         return
-    bot.reply_to(message, f"📊 <b>لوحة التحكم:</b>\n\nالسيرفر نشط ومتصل 24/7 ⚡️\nالمطور: <b>{message.from_user.first_name}</b>")
+    bot.reply_to(message, f"📊 <b>حالة السيرفر:</b>\n\nالسيرفر نشط ومتصل سحابياً بنجاح ⚡️\nالمطور: <b>{message.from_user.first_name}</b>")
 
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     text = message.text.strip()
     
-    # 1. روابط تيك توك
+    # روابط تيك توك
     if "tiktok.com" in text or "douyin.com" in text:
         wait = bot.reply_to(message, "⚡️ <b>جاري سحب المقطع بأعلى دقة وبدون علامة مائية...</b>")
         try:
@@ -59,12 +77,12 @@ def handle_all_messages(message):
             bot.edit_message_text("⚠️ حدث خطأ أثناء المعالجة، حاول لاحقاً.", message.chat.id, wait.message_id)
         return
 
-    # 2. الشيلات والأغاني
+    # الشيلات والأغاني
     if any(k in text.lower() for k in ["شيله", "شيلة", "اغنيه", "اغنية", "صوت"]):
         bot.reply_to(message, f"🎵 تم استلام طلبك لـ <b>{text}</b>، جاري تجهيز المحتوى...")
         return
 
-    # 3. الذكاء الاصطناعي
+    # الذكاء الاصطناعي
     wait = bot.reply_to(message, "⚡️ <b>لحظات أجهز لك الرد...</b>")
     try:
         url = "https://text.pollinations.ai/" + text
@@ -76,5 +94,5 @@ def handle_all_messages(message):
         pass
     bot.edit_message_text("أهلاً بك يا غالي! أرسل رابط تيك توك لتنزيله أو اكتب استفسارك وسأساعدك فوراً 🌹", message.chat.id, wait.message_id)
 
-print("✅ تم تشغيل البوت على السيرفر بنجاح...")
+print("✅ تم تشغيل السيرفر وبوت التيليجرام بنجاح...")
 bot.infinity_polling()
