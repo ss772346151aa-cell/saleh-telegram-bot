@@ -24,7 +24,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Saleh Global Mega Platform 2026 is LIVE 24/7! 🚀")
+        self.wfile.write("Saleh Global Mega Platform 2026 is LIVE 24/7!".encode('utf-8'))
 
     def do_HEAD(self):
         self.send_response(200)
@@ -139,7 +139,7 @@ def handle_help(message):
     help_text = (
         "📖 <b>دليل الاستخدام السريع للمنصة:</b>\n\n"
         "• <b>الذكاء الاصطناعي:</b> اضغط على الزر واكتب سؤالك مباشرة.\n"
-        "• <b>الصور:</b> أرسل وصفاً للتصميم (أو أرسل صورة ومعها تعليق للتعديل).\n"
+        "• <b>الصور:</b> أرسل وصفاً للتصميم (أو أرسل صورة ومعها تعليق لتحسينها).\n"
         "• <b>الترجمة:</b> اكتب: <code>ترجم النص إلى اللغة</code>.\n"
         "• <b>المهام:</b> اكتب: <code>اضف مهمة [اسم المهمة]</code>.\n"
         "• <b>المبيعات:</b> اكتب: <code>اضف بيع 100</code>.\n"
@@ -172,7 +172,7 @@ def handle_new_members(message):
         if member.id != bot.get_me().id:
             bot.send_message(message.chat.id, f"👋 أهلاً بك يا <b>{member.first_name}</b> في المجموعة! نتمنى لك وقتاً طيباً.")
 
-# فحص روابط السبام في المجموعات عبر regex
+# فحص الروابط للمجموعات
 @bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'] and bool(re.search(r'(https?://[^\s]+|t\.me/[^\s]+)', m.text or "")))
 def handle_group_links(message):
     admins = [a.user.id for a in bot.get_chat_administrators(message.chat.id)]
@@ -229,7 +229,7 @@ def process_private_chat(message):
         return
 
     if text == "🌐 ترجمة فورية":
-        bot.reply_to(message, "📝 أرسل النص الذي تريد ترجمته مسبوقاً بكلمة ترجم (مثال: <code>ترجم صباح الخير إلى الإنجليزية</code>):")
+        bot.reply_to(message, "📝 أرسل النص مسبوقاً بكلمة ترجم (مثال: <code>ترجم صباح الخير إلى الإنجليزية</code>):")
         return
 
     if text == "💰 أسعار العملات والذهب":
@@ -380,7 +380,6 @@ def process_private_chat(message):
     ai_ans = query_ai_engine(text, context=f"مشاعر المستخدم: {sentiment}")
     bot.edit_message_text(f"{ai_ans}\n\n<i>[الحالة النفسية للنص: {sentiment}]</i>", chat_id, wait.message_id)
 
-# دالات الـ Callbacks للخطوات التالية
 def ai_callback(message):
     wait = bot.reply_to(message, "⏳ <b>جاري المعالجة...</b>")
     ans = query_ai_engine(message.text)
