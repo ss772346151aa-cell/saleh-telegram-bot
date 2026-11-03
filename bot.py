@@ -9,14 +9,13 @@ import time
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# إعداد السجلات
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ==================== 1. خادم الويب المتوافق مع Render (منفذ 10000) ====================
+# ==================== 1. خادم فحص الحالة السحابي (Render 24/7) ====================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        return  # لمنع امتلاء السجلات
+        return  # إسكات السجلات للحفاظ على نظافة الـ Console
     
     def do_GET(self):
         self.send_response(200)
@@ -31,28 +30,26 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    logger.info(f"Health server listening on port {port}")
-    server.serve_forever()
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        logger.info(f"Health server listening on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Health server error: {e}")
 
-# تشغيل خادم الويب في مسار مستقل ليرضى سيرفر Render
 threading.Thread(target=run_health_server, daemon=True).start()
 
 # ==================== 2. إعدادات التوكن والهوية ====================
-raw_token = os.environ.get("BOT_TOKEN", "")
-if not raw_token:
-    logger.error("BOT_TOKEN is missing!")
-    exit(1)
+# التوكن الجديد المخصص للبوت
+DEFAULT_TOKEN = "9157081412:AAFNd58PvaVueVhHeWB_b0AWheOYDUi2_zE"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", DEFAULT_TOKEN).strip()
 
-BOT_TOKEN = raw_token.strip()
-
-# تهيئة البوت مع إيقاف التشابك
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
 
 BOT_USERNAME = "saleh_down_bot"
 AUDIO_STORE = {}
 
-# ==================== 3. محرك فك الروابط واستخراج تيار الفيديو ====================
+# ==================== 3. محرك فك الروابط واستخراج الوسائط المباشرة ====================
 def resolve_short_url(url: str) -> str:
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -62,10 +59,6 @@ def resolve_short_url(url: str) -> str:
         return url
 
 def fetch_stream_data(raw_url: str):
-    """
-    سحب رابط الـ Stream المباشر من خوادم CDN لتجاوز حد الـ 50MB
-    تيليجرام يقوم بسحب الفيديو مباشرة من الرابط بدون استهلاك لسيرفرك.
-    """
     clean_url = resolve_short_url(raw_url)
 
     # 1. تيك توك بكافة أشكاله (vt.tiktok, vm, tiktok.com)
@@ -93,7 +86,7 @@ def fetch_stream_data(raw_url: str):
         except Exception:
             pass
 
-    # 2. إنستغرام وفيسبوك وبقية المنصات (استخراج CDN مباشر)
+    # 2. إنستغرام وفيسبوك وبقية المنصات (استخراج CDN مباشر لتجاوز حد 50MB)
     gateways = [
         "https://api.cobalt.tools/api/json",
         "https://cobalt.api.scidsg.org/api/json",
@@ -108,7 +101,7 @@ def fetch_stream_data(raw_url: str):
         except Exception:
             continue
 
-    # محرك VKR الاحتياطي
+    # محرك احتياطي مباشر لإنستغرام
     try:
         if "instagram.com" in clean_url:
             r = requests.get(f"https://api.vkrdownloader.com/instagram/video.php?url={urllib.parse.quote(clean_url)}", timeout=10).json()
@@ -118,6 +111,7 @@ def fetch_stream_data(raw_url: str):
     except Exception:
         pass
 
+    # محرك احتياطي مباشر لفيسبوك
     try:
         if "facebook.com" in clean_url or "fb.watch" in clean_url:
             r = requests.get(f"https://api.vkrdownloader.com/fb/video.php?url={urllib.parse.quote(clean_url)}", timeout=10).json()
@@ -156,7 +150,6 @@ def handle_download(message):
         return
     raw_url = url_match.group(0)
 
-    # شريط العداد التفاعلي (المرحلة 1)
     wait_msg = bot.reply_to(
         message, 
         "⏳ <b>جاري الاتصال بالسيرفر وفك تشفير الرابط...</b>\n"
@@ -164,7 +157,6 @@ def handle_download(message):
     )
 
     try:
-        # المرحلة 2
         time.sleep(0.3)
         bot.edit_message_text(
             "⚡️ <b>جاري تجهيز البث المباشر بأعلى دقة وتخطي حد 50MB...</b>\n"
@@ -184,7 +176,6 @@ def handle_download(message):
             key = f"aud_{message.chat.id}_{int(time.time())}"
             AUDIO_STORE[key] = data.get("audio") or data.get("video")
 
-            # الأزرار الاحترافية
             markup = types.InlineKeyboardMarkup(row_width=2)
             btn_share = types.InlineKeyboardButton("🔗 شارك البوت", switch_inline_query="")
             btn_group = types.InlineKeyboardButton("✈️ أرسله في قروب", url=f"https://t.me/{BOT_USERNAME}?startgroup=true")
@@ -198,7 +189,6 @@ def handle_download(message):
                 f"🤖 @{BOT_USERNAME}"
             )
 
-            # إرسال الفيديو كرابط URL مباشر لتيليجرام (يتجاوز حد 50MB لأن سيرفرات تيليجرام تتولى البث)
             try:
                 bot.send_video(
                     message.chat.id, 
@@ -210,7 +200,6 @@ def handle_download(message):
                 bot.delete_message(message.chat.id, wait_msg.message_id)
                 return
             except Exception:
-                # إذا تطلب الأمر تيار بيانات مباشر
                 stream = requests.get(data["video"], stream=True, timeout=20)
                 bot.send_video(
                     message.chat.id, 
@@ -230,7 +219,7 @@ def handle_download(message):
         message.chat.id, wait_msg.message_id
     )
 
-# ==================== 6. استخراج الصوت ====================
+# ==================== 6. استخراج الصوت MP3 ====================
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ext_"))
 def handle_audio(call):
     key = call.data.replace("ext_", "")
@@ -248,7 +237,7 @@ def handle_audio(call):
     except Exception:
         bot.edit_message_text("❌ تعذر إرسال الصوت بشكل منفصل لهذا المقطع.", call.message.chat.id, load.message_id)
 
-# ==================== 7. النصوص العادية ====================
+# ==================== 7. الرسائل العامة ====================
 @bot.message_handler(func=lambda m: True)
 def handle_text(message):
     text = message.text.strip()
@@ -259,19 +248,27 @@ def handle_text(message):
     else:
         bot.reply_to(message, "أهلاً بك! أرسل رابط الفيديو (Instagram, TikTok, Facebook, YouTube) وسأسحبه لك فوراً 🚀")
 
-# ==================== 8. تشغيل البوت بنظام الاسترداد التلقائي ====================
+# ==================== 8. حلقة التشغيل ومعالجة تعارض 409 ====================
 if __name__ == "__main__":
-    logger.info("Bot starting with robust retry logic...")
-    # إزالة الـ webhook إن وُجد لضمان عمل polling بدون تعليق
+    logger.info("Starting Saleh Mega Engine...")
+    
+    # تفريغ أي اتصال قديم أو Webhook عالق
     try:
         bot.remove_webhook()
         time.sleep(1)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Webhook reset: {e}")
 
     while True:
         try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            logger.error(f"Polling loop crash, auto-restarting in 5s: {e}")
+            bot.polling(none_stop=True, interval=1, timeout=25)
+        except telebot.apihelper.ApiTelegramException as api_err:
+            if api_err.error_code == 409:
+                logger.error("Conflict 409 detected. Waiting 10s...")
+                time.sleep(10)
+            else:
+                logger.error(f"API Error: {api_err}")
+                time.sleep(3)
+        except Exception as err:
+            logger.error(f"Unexpected crash, restarting in 5s: {err}")
             time.sleep(5)
