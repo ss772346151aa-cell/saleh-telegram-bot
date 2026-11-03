@@ -21,7 +21,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Saleh Mega Engine is Live 24/7!")
+        self.wfile.write(b"Saleh Engine is Live 24/7!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -38,7 +38,7 @@ def run_health_server():
 
 threading.Thread(target=run_health_server, daemon=True).start()
 
-# ==================== 2. إعدادات التوكن والهوية ====================
+# ==================== 2. الإعدادات والتوكن ====================
 DEFAULT_TOKEN = "9157081412:AAFNd58PvaVueVhHeWB_b0AWheOYDUi2_zE"
 BOT_TOKEN = os.environ.get("BOT_TOKEN", DEFAULT_TOKEN).strip()
 
@@ -46,61 +46,66 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
 BOT_USERNAME = "saleh_down_bot"
 AUDIO_STORE = {}
 
-# بيانات RapidAPI المعتمدة
 RAPIDAPI_KEY = "2bbc6b508amshf8ae4c3acc0945ap121032jsn8dc7afbfa9bc"
 RAPIDAPI_HOST = "instagram-tiktok-youtube-downloader.p.rapidapi.com"
 
-# ==================== 3. محرك الاستخراج عبر RapidAPI الشامل ====================
-def fetch_media_from_rapidapi(target_url: str):
-    """
-    استخراج الفيديو عبر RapidAPI الشامل المخصص لجميع المنصات
-    (TikTok, Instagram Reels, Facebook, YouTube, Threads, Pinterest, X)
-    """
-    endpoint = f"https://{RAPIDAPI_HOST}/"
+# ==================== 3. محرك الاستخراج الدقيق للـ API ====================
+def extract_media_from_api(url: str):
     headers = {
         "x-rapidapi-key": RAPIDAPI_KEY,
         "x-rapidapi-host": RAPIDAPI_HOST
     }
-    params = {"url": target_url}
+    
+    # 1. الاستعلام عبر المسار الرئيسي
+    endpoints = [
+        f"https://{RAPIDAPI_HOST}/",
+        f"https://{RAPIDAPI_HOST}/download",
+        f"https://{RAPIDAPI_HOST}/media"
+    ]
+    
+    for ep in endpoints:
+        try:
+            res = requests.get(ep, headers=headers, params={"url": url}, timeout=15)
+            logger.info(f"API {ep} -> Status: {res.status_code}")
+            if res.status_code == 200:
+                data = res.json()
+                logger.info(f"API Data: {data}")
 
-    try:
-        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
-        res_data = response.json()
-        logger.info(f"RapidAPI Response: {res_data}")
+                video = (
+                    data.get("download_url") or 
+                    data.get("url") or 
+                    data.get("media") or 
+                    data.get("video_url")
+                )
+                
+                # التعامل مع منشورات الألبومات والمقاطع المتعددة
+                if not video and isinstance(data.get("items"), list) and len(data["items"]) > 0:
+                    first = data["items"][0]
+                    video = first.get("download_url") or first.get("url") or first.get("media")
 
-        # فحص بنية الرد المباشرة
-        video_url = None
-        audio_url = None
-        title = "مقطع فيديو"
+                audio = data.get("music_url") or data.get("audio") or video
 
-        # 1. الاستخراج في حال كان الرد قياسياً
-        if res_data.get("download_url"):
-            video_url = res_data["download_url"]
-        elif res_data.get("media"):
-            video_url = res_data["media"]
-        elif res_data.get("url"):
-            video_url = res_data["url"]
-        
-        # 2. في حال وجود مصفوفة عناصر (مثل ألبومات الصور أو مقاطع متعددة)
-        elif res_data.get("items") and isinstance(res_data["items"], list):
-            item = res_data["items"][0]
-            video_url = item.get("download_url") or item.get("url")
+                if video:
+                    return {"video": video, "audio": audio}
+        except Exception as e:
+            logger.error(f"Error querying {ep}: {e}")
 
-        # استخراج الصوت إن وُجد
-        audio_url = res_data.get("music_url") or video_url
-
-        if video_url:
-            return {
-                "video": video_url,
-                "audio": audio_url,
-                "title": res_data.get("title", title)
-            }
-    except Exception as e:
-        logger.error(f"RapidAPI Engine Error: {e}")
+    # محرك احتياطي سريع في حال تأخر الاستجابة
+    if "tiktok.com" in url:
+        try:
+            r = requests.get(f"https://www.tikwm.com/api/?url={urllib.parse.quote(url)}", timeout=10).json()
+            if r.get("code") == 0:
+                v = r["data"].get("hdplay") or r["data"].get("play")
+                if v and v.startswith("/"): v = "https://www.tikwm.com" + v
+                a = r["data"].get("music")
+                if a and a.startswith("/"): a = "https://www.tikwm.com" + a
+                return {"video": v, "audio": a or v}
+        except Exception:
+            pass
 
     return None
 
-# ==================== 4. الواجهة والترحيب ====================
+# ==================== 4. الأزرار والواجهة ====================
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("📥 كيفية التحميل", "🔥 حساب صلوح تيك توك")
@@ -110,17 +115,15 @@ def get_main_keyboard():
 def handle_start(message):
     welcome_msg = (
         f"👑 <b>أهلاً بك يا {message.from_user.first_name} في بوت صلوح للتحميل السريع!</b>\n\n"
-        "⚡️ <b>يدعم التحميل الفوري وبأعلى دقة متجاوزاً أي حدود للحجم من:</b>\n"
+        "⚡️ <b>يدعم التحميل الفوري وبأعلى دقة:</b>\n"
         "• <b>TikTok:</b> بدون علامة مائية\n"
         "• <b>Instagram:</b> Reels & Posts\n"
-        "• <b>Threads:</b> الفيديوهات والصور\n"
-        "• <b>Facebook:</b> Reels & Videos\n"
-        "• <b>YouTube:</b> Shorts & Videos\n\n"
+        "• <b>Threads & Facebook & YouTube</b>\n\n"
         "🚀 <i>أرسل أي رابط مباشرة للتحميل...</i>"
     )
     bot.reply_to(message, welcome_msg, reply_markup=get_main_keyboard())
 
-# ==================== 5. معالجة الروابط وشريط العداد التفاعلي ====================
+# ==================== 5. معالجة الروابط وشريط العداد ====================
 @bot.message_handler(func=lambda m: bool(re.search(r'(https?://[^\s]+)', m.text or "")))
 def handle_download_request(message):
     url_match = re.search(r'(https?://[^\s]+)', message.text)
@@ -128,7 +131,6 @@ def handle_download_request(message):
         return
     raw_url = url_match.group(0)
 
-    # المرحلة 1: شريط العداد (20%)
     wait_msg = bot.reply_to(
         message, 
         "⏳ <b>جاري الاتصال بالسيرفر وفك تشفير الرابط...</b>\n"
@@ -136,18 +138,16 @@ def handle_download_request(message):
     )
 
     try:
-        # المرحلة 2: محاكاة فك التشفير وتجهيز البث (60%)
         time.sleep(0.3)
         bot.edit_message_text(
-            "⚡️ <b>جاري فحص البوابات السحابية وتجاوز حد 50MB...</b>\n"
+            "⚡️ <b>جاري فحص البوابات السحابية وتجهيز البث...</b>\n"
             "<code>[██████░░░░] 60%</code>",
             message.chat.id, wait_msg.message_id
         )
 
-        media = fetch_media_from_rapidapi(raw_url)
+        media = extract_media_from_api(raw_url)
 
         if media and media.get("video"):
-            # المرحلة 3: اكتمال المعالجة (100%)
             bot.edit_message_text(
                 "🚀 <b>تم التجهيز بنجاح! جاري إرسال المقطع لشاشتك...</b>\n"
                 "<code>[██████████] 100%</code>",
@@ -170,7 +170,7 @@ def handle_download_request(message):
                 f"🤖 @{BOT_USERNAME}"
             )
 
-            # إرسال الفيديو كبث متدفق لتخطي حد 50MB
+            # محاولة إرسال الرابط المباشر
             try:
                 bot.send_video(
                     message.chat.id, 
@@ -194,7 +194,7 @@ def handle_download_request(message):
                 return
 
     except Exception as e:
-        logger.error(f"Download Engine Failed: {e}")
+        logger.error(f"Download processing failed: {e}")
 
     bot.edit_message_text(
         "❌ تعذر تحميل المقطع مباشرة، تأكد أن الفيديو عام وغير محذوف.",
@@ -220,7 +220,7 @@ def handle_audio_btn(call):
     except Exception:
         bot.edit_message_text("❌ تعذر إرسال الصوت بشكل منفصل لهذا المقطع.", call.message.chat.id, load.message_id)
 
-# ==================== 7. النصوص العامة ====================
+# ==================== 7. الرسائل العامة ====================
 @bot.message_handler(func=lambda m: True)
 def handle_text(message):
     text = message.text.strip()
@@ -229,11 +229,11 @@ def handle_text(message):
     elif text == "🔥 حساب صلوح تيك توك":
         bot.reply_to(message, "🎬 تابع الحساب الرسمي على تيك توك:\nhttps://www.tiktok.com/@almanay22")
     else:
-        bot.reply_to(message, "أهلاً بك! أرسل رابط الفيديو (TikTok, Instagram, Threads, Facebook) وسأسحبه لك فوراً 🚀")
+        bot.reply_to(message, "أهلاً بك! أرسل رابط الفيديو وسأسحبه لك فوراً 🚀")
 
-# ==================== 8. حلقة التشغيل الآمنة ====================
+# ==================== 8. حلقة التشغيل ====================
 if __name__ == "__main__":
-    logger.info("RapidAPI Powered Engine Started...")
+    logger.info("Bot Engine Starting with Active RapidAPI...")
     try:
         bot.remove_webhook()
         time.sleep(1)
